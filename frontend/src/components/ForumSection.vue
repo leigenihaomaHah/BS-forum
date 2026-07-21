@@ -18,8 +18,7 @@
         <div class="forum-icon">{{ forum.icon || '📁' }}</div>
         <div style="flex: 1; min-width: 0">
           <div class="forum-title">
-            <router-link v-if="!forum.locked" :to="`/forum/${forum.id}`">{{ forum.name }}</router-link>
-            <router-link v-else :to="`/recharge`" class="locked-link" :title="forum.accessLabel">
+            <router-link :to="`/forum/${forum.id}`" :class="{ 'locked-link': forum.locked }" :title="forum.accessLabel">
               {{ forum.name }}
             </router-link>
             <span v-if="forum.todayThreadCount && !forum.locked" class="today">({{ forum.todayThreadCount }})</span>
