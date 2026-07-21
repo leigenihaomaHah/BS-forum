@@ -1,0 +1,46 @@
+namespace ForumApi.Models;
+
+public class User
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string Nickname { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public int Points { get; set; }
+    public int Coins { get; set; }
+    public int Level { get; set; } = 1;
+    public DateTime? LastSignInDate { get; set; }
+    public int ConsecutiveSignInDays { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsAdmin { get; set; }
+    public bool IsMuted { get; set; }
+    public DateTime? MutedUntil { get; set; }
+    public string? MuteReason { get; set; }
+    public string InviteCode { get; set; } = string.Empty;
+    public int? InvitedByUserId { get; set; }
+    public bool IsVip { get; set; }
+    public DateTime? VipUntil { get; set; }
+    /// <summary>会员档位：0无 1月 2季 3年 4永久。以有效 VIP 为准读取。</summary>
+    public int VipTier { get; set; }
+    public int LotteryTickets { get; set; }
+    public string? AvatarFrame { get; set; }
+
+    public ICollection<ForumThread> Threads { get; set; } = new List<ForumThread>();
+    public ICollection<Post> Posts { get; set; } = new List<Post>();
+
+    public bool IsEffectivelyVip()
+    {
+        if (!IsVip) return false;
+        if (VipUntil.HasValue && VipUntil.Value <= DateTime.UtcNow) return false;
+        return true;
+    }
+
+    /// <summary>True if muted and not expired.</summary>
+    public bool IsEffectivelyMuted()
+    {
+        if (!IsMuted) return false;
+        if (MutedUntil.HasValue && MutedUntil.Value <= DateTime.UtcNow) return false;
+        return true;
+    }
+}

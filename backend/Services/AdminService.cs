@@ -1,0 +1,698 @@
+using System.Globalization;
+using ForumApi.Data;
+using ForumApi.Dtos;
+using ForumApi.Helpers;
+using ForumApi.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace ForumApi.Services;
+
+public class AdminService
+{
+    public const int EssencePointsReward = 20;
+    public const int EssenceCoinsReward = 5;
+
+    private readonly AppDbContext _db;
+    private readonly LevelService _levels;
+    private readonly RewardService _rewards;
+    private readonly CommunityService _community;
+    private readonly NotificationService _notifications;
+
+    public AdminService(AppDbContext db, LevelService levels, RewardService rewards, CommunityService community, NotificationService notifications)
+    {
+        _db = db;
+        _levels = levels;
+        _rewards = rewards;
+        _community = community;
+        _notifications = notifications;
+    }
+
+    public async Task<AdminStatsDto> GetStatsAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+        var tomorrow = today.AddDays(1);
+        var now = DateTime.UtcNow;
+
+        var totalUsers = await _db.Users.CountAsync();
+        var totalThreads = await _db.Threads.CountAsync();
+        var totalPosts = await _db.Posts.CountAsync();
+        var totalForums = await _db.Forums.CountAsync();
+
+        var todaySignIns = await _db.SignInRecords.CountAsync(r => r.SignInDate == today);
+        var todayRegistrations = await _db.Users.CountAsync(u => u.CreatedAt >= today && u.CreatedAt < tomorrow);
+        var todayThreads = await _db.Threads.CountAsync(t => t.CreatedAt >= today && t.CreatedAt < tomorrow);
+        var todayReplies = await _db.Posts.CountAsync(p => p.Floor > 1 && p.CreatedAt >= today && p.CreatedAt < tomorrow);
+
+        var signInUserIds = await _db.SignInRecords.Where(r => r.SignInDate == today).Select(r => r.UserId).ToListAsync();
+        var threadAuthorIds = await _db.Threads.Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow).Select(t => t.AuthorId).ToListAsync();
+        var postAuthorIds = await _db.Posts.Where(p => p.CreatedAt >= today && p.CreatedAt < tomorrow).Select(p => p.AuthorId).ToListAsync();
+        var todayActiveUsers = signInUserIds.Concat(threadAuthorIds).Concat(postAuthorIds).Distinct().Count();
+        var todayActive = todayActiveUsers;
+
+        var pendingReports = await _db.Reports.CountAsync(r => r.Status == "pending");
+        var hiddenThreads = await _db.Threads.CountAsync(t => t.IsHidden);
+        var mutedUsers = await _db.Users.CountAsync(u => u.IsMuted && (u.MutedUntil == null || u.MutedUntil > now));
+        var lockedThreads = await _db.Threads.CountAsync(t => t.RepliesLocked);
+        var essenceCount = await _db.Threads.CountAsync(t => t.IsEssence && !t.IsHidden);
+        var pinnedCount = await _db.Threads.CountAsync(t => t.IsPinned && !t.IsHidden);
+
+        var todayCoinDelta = await _db.CoinLedgers
+            .Where(c => c.CreatedAt >= today && c.CreatedAt < tomorrow)
+            .SumAsync(c => (int?)c.Delta) ?? 0;
+        var todayLotterySpins = await _db.LotterySpins.CountAsync(s => s.CreatedAt >= today && s.CreatedAt < tomorrow);
+        var todayLotteryOutCoins = await _db.LotterySpins
+            .Where(s => s.CreatedAt >= today && s.CreatedAt < tomorrow)
+            .SumAsync(s => (int?)s.PrizeCoins) ?? 0;
+        var todayLotteryCostCoins = await _db.LotterySpins
+            .Where(s => s.CreatedAt >= today && s.CreatedAt < tomorrow)
+            .SumAsync(s => (int?)s.CostCoins) ?? 0;
+        var todayShopOrders = await _db.CoinLedgers.CountAsync(c =>
+            c.Reason == "shop_buy" && c.CreatedAt >= today && c.CreatedAt < tomorrow)
+            + await _db.PointLedgers.CountAsync(p =>
+                p.Reason == "shop_buy" && p.CreatedAt >= today && p.CreatedAt < tomorrow);
+        var vipUsers = await _db.Users.CountAsync(u => u.IsVip && (u.VipUntil == null || u.VipUntil > now));
+        var lotteryTicketStock = await _db.Users.SumAsync(u => (int?)u.LotteryTickets) ?? 0;
+
+        var recentUsersRaw = await _db.Users
+            .OrderByDescending(u => u.CreatedAt)
+            .Take(5)
+            .ToListAsync();
+        var recentUsers = new List<AdminRecentUserDto>();
+        foreach (var u in recentUsersRaw)
+        {
+            var ln = await _levels.GetLevelNameAsync(u.Level);
+            recentUsers.Add(new AdminRecentUserDto(u.Id, u.Username, u.Nickname, u.Level, ln, u.CreatedAt));
+        }
+
+        var hotThreads = await _db.Threads
+            .Include(t => t.Forum)
+            .Where(t => !t.IsHidden)
+            .OrderByDescending(t => t.Views)
+            .Take(5)
+            .Select(t => new AdminHotThreadDto(t.Id, t.Title, t.Forum.Name, t.Views, t.ReplyCount))
+            .ToListAsync();
+
+        var weeklyActivity = new List<AdminDayCountDto>();
+        var dailyRegistrations = new List<AdminDayCountDto>();
+        var dailyActive = new List<AdminDayCountDto>();
+        var dailyNewThreads = new List<AdminDayCountDto>();
+        var culture = CultureInfo.GetCultureInfo("zh-CN");
+        var signInSum7 = 0;
+
+        for (var i = 6; i >= 0; i--)
+        {
+            var d = today.AddDays(-i);
+            var dateStr = d.ToString("yyyy-MM-dd");
+            var dayLabel = d.ToString("ddd", culture);
+            var signCount = await _db.SignInRecords.CountAsync(r => r.SignInDate == d);
+            var regCount = await _db.Users.CountAsync(u => u.CreatedAt >= d && u.CreatedAt < d.AddDays(1));
+            var newThreadCount = await _db.Threads.CountAsync(t => t.CreatedAt >= d && t.CreatedAt < d.AddDays(1));
+            signInSum7 += signCount;
+            weeklyActivity.Add(new AdminDayCountDto(dateStr, dayLabel, signCount));
+            dailyRegistrations.Add(new AdminDayCountDto(dateStr, dayLabel, regCount));
+            dailyActive.Add(new AdminDayCountDto(dateStr, dayLabel, signCount));
+            dailyNewThreads.Add(new AdminDayCountDto(dateStr, dayLabel, newThreadCount));
+        }
+
+        var signInAvg7d = Math.Round(signInSum7 / 7.0, 1);
+
+        var forums = await _db.Forums.OrderBy(f => f.SortOrder).ThenBy(f => f.Id).ToListAsync();
+        var threadCounts = await _db.Threads.GroupBy(t => t.ForumId)
+            .Select(g => new { ForumId = g.Key, C = g.Count() }).ToDictionaryAsync(x => x.ForumId, x => x.C);
+        var todayByForum = await _db.Threads
+            .Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow)
+            .GroupBy(t => t.ForumId)
+            .Select(g => new { ForumId = g.Key, C = g.Count() })
+            .ToDictionaryAsync(x => x.ForumId, x => x.C);
+        var subCounts = await _db.ForumSubscriptions.GroupBy(s => s.ForumId)
+            .Select(g => new { ForumId = g.Key, C = g.Count() }).ToDictionaryAsync(x => x.ForumId, x => x.C);
+        var forumHeat = forums.Select(f => new AdminForumHeatDto(
+            f.Id, f.Name,
+            threadCounts.GetValueOrDefault(f.Id),
+            todayByForum.GetValueOrDefault(f.Id),
+            subCounts.GetValueOrDefault(f.Id))).ToList();
+
+        var todoReports = await _db.Reports.Include(r => r.Reporter)
+            .Where(r => r.Status == "pending")
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(5)
+            .Select(r => new AdminTodoReportDto(r.Id, r.TargetType, r.TargetId, r.Reason, r.Reporter.Nickname, r.CreatedAt))
+            .ToListAsync();
+
+        var todoHidden = await _db.Threads.Include(t => t.Forum).Include(t => t.Author)
+            .Where(t => t.IsHidden)
+            .OrderByDescending(t => t.CreatedAt)
+            .Take(5)
+            .Select(t => new AdminTodoThreadDto(t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.CreatedAt))
+            .ToListAsync();
+
+        var todoMuted = await _db.Users
+            .Where(u => u.IsMuted && (u.MutedUntil == null || u.MutedUntil > now))
+            .OrderByDescending(u => u.Id)
+            .Take(5)
+            .Select(u => new AdminTodoUserDto(u.Id, u.Username, u.Nickname, u.MutedUntil, u.MuteReason))
+            .ToListAsync();
+
+        var todoLocked = await _db.Threads.Include(t => t.Forum).Include(t => t.Author)
+            .Where(t => t.RepliesLocked && !t.IsHidden)
+            .OrderByDescending(t => t.CreatedAt)
+            .Take(5)
+            .Select(t => new AdminTodoThreadDto(t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.CreatedAt))
+            .ToListAsync();
+
+        var recentModLogs = await _db.ModerationLogs.Include(m => m.Admin)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(8)
+            .Select(m => new ModerationLogDto(
+                m.Id, m.AdminId, m.Admin.Nickname, m.TargetType, m.TargetId,
+                m.Action, m.Reason, m.CreatedAt))
+            .ToListAsync();
+
+        return new AdminStatsDto(
+            totalUsers, totalThreads, totalPosts, totalForums,
+            todaySignIns, todayRegistrations, todayActive,
+            todayThreads, todayReplies, todayActiveUsers,
+            pendingReports, hiddenThreads, mutedUsers, lockedThreads,
+            essenceCount, pinnedCount,
+            todayCoinDelta, todayLotterySpins, todayLotteryOutCoins, todayLotteryCostCoins,
+            todayShopOrders, vipUsers, lotteryTicketStock, signInAvg7d,
+            recentUsers, hotThreads, weeklyActivity, dailyRegistrations, dailyActive, dailyNewThreads,
+            forumHeat, todoReports, todoHidden, todoMuted, todoLocked, recentModLogs);
+    }
+
+    public async Task<PagedResult<AdminUserItemDto>> GetUsersAsync(int page, int pageSize, string? search, bool? muted = null)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var now = DateTime.UtcNow;
+        var q = _db.Users.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(u => u.Username.Contains(s) || u.Nickname.Contains(s));
+        }
+        if (muted == true)
+            q = q.Where(u => u.IsMuted && (u.MutedUntil == null || u.MutedUntil > now));
+
+        var total = await q.CountAsync();
+        var users = await q.OrderByDescending(u => u.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var ids = users.Select(u => u.Id).ToList();
+        var threadCounts = await _db.Threads.Where(t => ids.Contains(t.AuthorId))
+            .GroupBy(t => t.AuthorId).Select(g => new { g.Key, C = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.C);
+        var replyCounts = await _db.Posts.Where(p => ids.Contains(p.AuthorId) && p.Floor > 1)
+            .GroupBy(p => p.AuthorId).Select(g => new { g.Key, C = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.C);
+        var signTotals = await _db.SignInRecords.Where(r => ids.Contains(r.UserId))
+            .GroupBy(r => r.UserId).Select(g => new { g.Key, C = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.C);
+
+        var items = new List<AdminUserItemDto>();
+        foreach (var u in users)
+        {
+            var ln = await _levels.GetLevelNameAsync(u.Level);
+            var effectivelyMuted = u.IsEffectivelyMuted();
+            items.Add(new AdminUserItemDto(
+                u.Id, u.Username, u.Nickname, u.Avatar, u.Level, ln,
+                u.Points, u.Coins, u.ConsecutiveSignInDays,
+                signTotals.GetValueOrDefault(u.Id),
+                threadCounts.GetValueOrDefault(u.Id),
+                replyCounts.GetValueOrDefault(u.Id),
+                u.CreatedAt,
+                u.IsAdmin ? "admin" : "user",
+                u.IsAdmin,
+                effectivelyMuted,
+                effectivelyMuted ? u.MutedUntil : null,
+                effectivelyMuted ? u.MuteReason : null,
+                u.IsEffectivelyVip(),
+                u.IsEffectivelyVip() ? u.VipUntil : null));
+        }
+
+        return new PagedResult<AdminUserItemDto>(items, total, page, pageSize);
+    }
+
+    public async Task<(object? Result, string? Error)> UpdateUserAsync(int id, UpdateAdminUserRequest req)
+    {
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return (null, "用户不存在");
+
+        if (req.Nickname != null)
+        {
+            var nick = req.Nickname.Trim();
+            if (nick.Length is < 1 or > 20) return (null, "昵称无效");
+            user.Nickname = nick;
+        }
+        if (req.Points.HasValue) user.Points = Math.Max(0, req.Points.Value);
+        if (req.Coins.HasValue) user.Coins = Math.Max(0, req.Coins.Value);
+        if (!string.IsNullOrWhiteSpace(req.Password))
+        {
+            var pwdError = PasswordRules.Validate(req.Password);
+            if (pwdError != null) return (null, pwdError);
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
+        }
+
+        await _levels.RecalculateLevelAsync(user);
+        await _db.SaveChangesAsync();
+        var ln = await _levels.GetLevelNameAsync(user.Level);
+        return (new
+        {
+            message = "更新成功",
+            user = new { user.Id, user.Username, user.Nickname, user.Level, levelName = ln, user.Points, user.Coins }
+        }, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteUserAsync(int id, int adminId)
+    {
+        if (id == adminId) return (false, "不能删除自己");
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return (false, "用户不存在");
+        if (await _db.Threads.AnyAsync(t => t.AuthorId == id) || await _db.Posts.AnyAsync(p => p.AuthorId == id))
+            return (false, "该用户仍有发帖/回复，无法删除");
+
+        _db.Users.Remove(user);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(object? Result, string? Error)> UpdateRoleAsync(int id, int adminId, string role)
+    {
+        if (id == adminId) return (null, "不能修改自己的角色");
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return (null, "用户不存在");
+
+        var normalized = role.Trim().ToLowerInvariant();
+        if (normalized is "admin" or "super_admin")
+            user.IsAdmin = true;
+        else if (normalized == "user")
+            user.IsAdmin = false;
+        else
+            return (null, "无效的角色");
+
+        await _db.SaveChangesAsync();
+        return (new
+        {
+            message = "角色更新成功",
+            user = new { user.Id, user.Username, role = user.IsAdmin ? "admin" : "user" }
+        }, null);
+    }
+
+    public async Task<PagedResult<AdminThreadItemDto>> GetThreadsAsync(int page, int pageSize, string? search, string? status = null)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var q = _db.Threads.Include(t => t.Forum).Include(t => t.Author).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(t => t.Title.Contains(s) || t.Author.Nickname.Contains(s) || t.Forum.Name.Contains(s));
+        }
+
+        status = status?.Trim().ToLowerInvariant();
+        if (status == "hidden") q = q.Where(t => t.IsHidden);
+        else if (status is "locked" or "replies_locked") q = q.Where(t => t.RepliesLocked);
+        else if (status == "pinned") q = q.Where(t => t.IsPinned);
+        else if (status is "essence" or "精品") q = q.Where(t => t.IsEssence);
+
+        var total = await q.CountAsync();
+        var items = await q.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(t => new AdminThreadItemDto(
+                t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.Author.Level,
+                t.ReplyCount, t.Views, t.LikeCount, t.CreatedAt,
+                t.IsHidden, t.RepliesLocked, t.IsPinned, t.IsEssence))
+            .ToListAsync();
+
+        return new PagedResult<AdminThreadItemDto>(items, total, page, pageSize);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteThreadAsync(int id)
+    {
+        var thread = await _db.Threads.Include(t => t.Forum).Include(t => t.Posts)
+            .FirstOrDefaultAsync(t => t.Id == id);
+        if (thread == null) return (false, "帖子不存在");
+
+        thread.Forum.ThreadCount = Math.Max(0, thread.Forum.ThreadCount - 1);
+        thread.Forum.PostCount = Math.Max(0, thread.Forum.PostCount - thread.Posts.Count);
+        _db.Threads.Remove(thread);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<List<AdminCategoryDto>> GetCategoriesAsync()
+    {
+        var cats = await _db.Categories.Include(c => c.Forums).OrderBy(c => c.SortOrder).ToListAsync();
+        return cats.Select(c => new AdminCategoryDto(
+            c.Id, c.Name, c.Icon,
+            c.Forums.OrderBy(f => f.SortOrder).Select(f => new AdminForumDto(
+                f.Id, f.Name, f.Icon, f.Description, f.ThreadCount, f.PostCount,
+                f.MinVipTier, f.MinVipTier <= 0 ? "所有人" : VipAccess.TierLabel(f.MinVipTier) + "可见")).ToList()
+        )).ToList();
+    }
+
+    public async Task<AdminCategoryDto> CreateCategoryAsync(CreateCategoryRequest? req)
+    {
+        var maxSort = await _db.Categories.MaxAsync(c => (int?)c.SortOrder) ?? 0;
+        var name = string.IsNullOrWhiteSpace(req?.Name) ? "新分类" : req!.Name!.Trim();
+        if (name.Length > 64) name = name[..64];
+        var icon = string.IsNullOrWhiteSpace(req?.Icon) ? "📁" : req!.Icon!.Trim();
+        if (icon.Length > 16) icon = icon[..16];
+
+        var cat = new Category
+        {
+            Name = name,
+            Icon = icon,
+            SortOrder = maxSort + 1,
+            IsCollapsedDefault = false
+        };
+        _db.Categories.Add(cat);
+        await _db.SaveChangesAsync();
+        return new AdminCategoryDto(cat.Id, cat.Name, cat.Icon, new List<AdminForumDto>());
+    }
+
+    public async Task<(AdminCategoryDto? Result, string? Error)> UpdateCategoryAsync(int id, UpdateCategoryRequest req)
+    {
+        var cat = await _db.Categories.Include(c => c.Forums).FirstOrDefaultAsync(c => c.Id == id);
+        if (cat == null) return (null, "分类不存在");
+        if (!string.IsNullOrWhiteSpace(req.Name)) cat.Name = req.Name.Trim();
+        if (req.Icon != null) cat.Icon = req.Icon;
+        await _db.SaveChangesAsync();
+        return (new AdminCategoryDto(cat.Id, cat.Name, cat.Icon,
+            cat.Forums.OrderBy(f => f.SortOrder).Select(f => new AdminForumDto(
+                f.Id, f.Name, f.Icon, f.Description, f.ThreadCount, f.PostCount,
+                f.MinVipTier, f.MinVipTier <= 0 ? "所有人" : VipAccess.TierLabel(f.MinVipTier) + "可见")).ToList()), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteCategoryAsync(int id)
+    {
+        var cat = await _db.Categories.Include(c => c.Forums).FirstOrDefaultAsync(c => c.Id == id);
+        if (cat == null) return (false, "分类不存在");
+        if (cat.Forums.Any()) return (false, "请先删除分类下的版块");
+        _db.Categories.Remove(cat);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(AdminForumDto? Result, string? Error)> CreateForumAsync(CreateForumRequest req)
+    {
+        var cat = await _db.Categories.FindAsync(req.CategoryId);
+        if (cat == null) return (null, "分类不存在");
+        var maxSort = await _db.Forums.Where(f => f.CategoryId == cat.Id).MaxAsync(f => (int?)f.SortOrder) ?? 0;
+        var forum = new Forum
+        {
+            CategoryId = cat.Id,
+            Name = string.IsNullOrWhiteSpace(req.Name) ? "新版块" : req.Name.Trim(),
+            Icon = string.IsNullOrWhiteSpace(req.Icon) ? "📁" : req.Icon,
+            Description = req.Description?.Trim() ?? "",
+            SortOrder = maxSort + 1,
+            MinVipTier = Math.Clamp(req.MinVipTier, 0, VipAccess.TierLifetime)
+        };
+        _db.Forums.Add(forum);
+        await _db.SaveChangesAsync();
+        var label = forum.MinVipTier <= 0 ? "所有人" : VipAccess.TierLabel(forum.MinVipTier) + "可见";
+        return (new AdminForumDto(forum.Id, forum.Name, forum.Icon, forum.Description, 0, 0, forum.MinVipTier, label), null);
+    }
+
+    public async Task<(AdminForumDto? Result, string? Error)> UpdateForumAsync(int id, UpdateForumRequest req)
+    {
+        var forum = await _db.Forums.FindAsync(id);
+        if (forum == null) return (null, "版块不存在");
+        if (!string.IsNullOrWhiteSpace(req.Name)) forum.Name = req.Name.Trim();
+        if (req.Icon != null) forum.Icon = req.Icon;
+        if (req.Description != null) forum.Description = req.Description;
+        if (req.MinVipTier.HasValue)
+            forum.MinVipTier = Math.Clamp(req.MinVipTier.Value, 0, VipAccess.TierLifetime);
+        await _db.SaveChangesAsync();
+        var label = forum.MinVipTier <= 0 ? "所有人" : VipAccess.TierLabel(forum.MinVipTier) + "可见";
+        return (new AdminForumDto(forum.Id, forum.Name, forum.Icon, forum.Description, forum.ThreadCount, forum.PostCount, forum.MinVipTier, label), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteForumAsync(int id)
+    {
+        var forum = await _db.Forums.FindAsync(id);
+        if (forum == null) return (false, "版块不存在");
+        if (await _db.Threads.AnyAsync(t => t.ForumId == id))
+            return (false, "版块下仍有帖子，无法删除");
+        _db.Forums.Remove(forum);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<AdminSignInStatsDto> GetSignInStatsAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+        var todayCount = await _db.SignInRecords.CountAsync(r => r.SignInDate == today);
+        var users = await _db.Users.ToListAsync();
+        var signTotals = await _db.SignInRecords
+            .GroupBy(r => r.UserId)
+            .Select(g => new { g.Key, C = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.C);
+
+        var dist = new Dictionary<string, int>
+        {
+            ["0"] = 0, ["1-6"] = 0, ["7-13"] = 0, ["14-29"] = 0, ["30+"] = 0
+        };
+
+        var top = new List<AdminSignInTopUserDto>();
+        foreach (var u in users)
+        {
+            var cons = u.ConsecutiveSignInDays;
+            var bucket = cons >= 30 ? "30+" : cons >= 14 ? "14-29" : cons >= 7 ? "7-13" : cons >= 1 ? "1-6" : "0";
+            dist[bucket] = dist.GetValueOrDefault(bucket) + 1;
+            top.Add(new AdminSignInTopUserDto(u.Id, u.Username, u.Nickname, cons, signTotals.GetValueOrDefault(u.Id)));
+        }
+
+        return new AdminSignInStatsDto(
+            todayCount,
+            dist,
+            top.OrderByDescending(t => t.TotalDays).Take(10).ToList());
+    }
+
+    public async Task<(bool Ok, string? Error)> SetThreadHiddenAsync(int adminId, int threadId, bool hidden, string? reason)
+    {
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread == null) return (false, "帖子不存在");
+        thread.IsHidden = hidden;
+        await LogAsync(adminId, "thread", threadId, hidden ? "hide" : "unhide", reason);
+        await _db.SaveChangesAsync();
+        if (hidden)
+        {
+            var content = string.IsNullOrWhiteSpace(reason)
+                ? $"你的帖子「{thread.Title}」已被管理员隐藏"
+                : $"你的帖子「{thread.Title}」已被隐藏：{reason.Trim()}";
+            await _notifications.AddSystemNotificationAsync(thread.AuthorId, content, thread.Id, thread.Title);
+            await _db.SaveChangesAsync();
+        }
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> SetRepliesLockedAsync(int adminId, int threadId, bool locked, string? reason)
+    {
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread == null) return (false, "帖子不存在");
+        thread.RepliesLocked = locked;
+        await LogAsync(adminId, "thread", threadId, locked ? "lock_replies" : "unlock_replies", reason);
+        await _db.SaveChangesAsync();
+        if (locked)
+        {
+            var content = string.IsNullOrWhiteSpace(reason)
+                ? $"你的帖子「{thread.Title}」已被禁止回复"
+                : $"你的帖子「{thread.Title}」已被禁止回复：{reason.Trim()}";
+            await _notifications.AddSystemNotificationAsync(thread.AuthorId, content, thread.Id, thread.Title);
+            await _db.SaveChangesAsync();
+        }
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> SetThreadPinnedAsync(int adminId, int threadId, bool pinned, string? reason)
+    {
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread == null) return (false, "帖子不存在");
+        thread.IsPinned = pinned;
+        await LogAsync(adminId, "thread", threadId, pinned ? "pin" : "unpin", reason);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error, string? Message)> SetThreadEssenceAsync(int adminId, int threadId, bool essence, string? reason)
+    {
+        var thread = await _db.Threads.Include(t => t.Author).FirstOrDefaultAsync(t => t.Id == threadId);
+        if (thread == null) return (false, "帖子不存在", null);
+        if (thread.IsHidden && essence) return (false, "已拉黑的帖子不能设为精品", null);
+
+        thread.IsEssence = essence;
+        string? msg = essence ? "已设为精品" : "已取消精品";
+
+        if (essence && !thread.EssenceAwarded)
+        {
+            await _rewards.TryAwardPointsAsync(
+                thread.Author, EssencePointsReward, "essence_award", "thread", thread.Id);
+            await _rewards.AwardCoinsAsync(
+                thread.Author, EssenceCoinsReward, "essence_award", "thread", thread.Id);
+            thread.EssenceAwarded = true;
+            msg = $"已设为精品，作者获得 +{EssencePointsReward} 积分、+{EssenceCoinsReward} 金币";
+            await _community.OnEssenceAwardedAsync(thread.AuthorId);
+        }
+
+        await LogAsync(adminId, "thread", threadId, essence ? "essence" : "unessence", reason);
+        await _db.SaveChangesAsync();
+        if (essence)
+        {
+            var content = thread.EssenceAwarded && msg!.Contains("积分")
+                ? $"恭喜！你的帖子「{thread.Title}」被设为精品，获得 +{EssencePointsReward} 积分、+{EssenceCoinsReward} 金币"
+                : $"你的帖子「{thread.Title}」被设为精品";
+            await _notifications.AddSystemNotificationAsync(thread.AuthorId, content, thread.Id, thread.Title);
+            await _db.SaveChangesAsync();
+        }
+        return (true, null, msg);
+    }
+
+    public async Task<(bool Ok, string? Error)> MuteUserAsync(int adminId, int userId, int? days, string? reason)
+    {
+        if (adminId == userId) return (false, "不能禁言自己");
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return (false, "用户不存在");
+        if (user.IsAdmin) return (false, "不能禁言管理员");
+
+        user.IsMuted = true;
+        user.MuteReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        user.MutedUntil = days is > 0 ? DateTime.UtcNow.AddDays(days.Value) : null;
+        await LogAsync(adminId, "user", userId, "mute", reason);
+        await _db.SaveChangesAsync();
+
+        var duration = days is > 0 ? $"{days} 天" : "永久";
+        var muteMsg = string.IsNullOrWhiteSpace(reason)
+            ? $"你的账号已被禁言（{duration}）"
+            : $"你的账号已被禁言（{duration}）：{reason.Trim()}";
+        await _notifications.AddSystemNotificationAsync(userId, muteMsg);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> UnmuteUserAsync(int adminId, int userId, string? reason)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return (false, "用户不存在");
+        user.IsMuted = false;
+        user.MutedUntil = null;
+        user.MuteReason = null;
+        await LogAsync(adminId, "user", userId, "unmute", reason);
+        await _db.SaveChangesAsync();
+        await _notifications.AddSystemNotificationAsync(userId, "你的禁言已解除，可以正常发帖回帖了");
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<PagedResult<ModerationLogDto>> GetModerationLogsAsync(int page, int pageSize, string? targetType)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var q = _db.ModerationLogs.Include(m => m.Admin).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(targetType))
+            q = q.Where(m => m.TargetType == targetType.Trim().ToLowerInvariant());
+
+        var total = await q.CountAsync();
+        var items = await q.OrderByDescending(m => m.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => new ModerationLogDto(
+                m.Id, m.AdminId, m.Admin.Nickname, m.TargetType, m.TargetId,
+                m.Action, m.Reason, m.CreatedAt))
+            .ToListAsync();
+        return new PagedResult<ModerationLogDto>(items, total, page, pageSize);
+    }
+
+    public async Task<List<HomeBannerDto>> ListBannersAsync(bool enabledOnly = false)
+    {
+        var q = _db.HomeBanners.AsQueryable();
+        if (enabledOnly) q = q.Where(b => b.Enabled);
+        return await q.OrderBy(b => b.SortOrder).ThenBy(b => b.Id)
+            .Select(b => new HomeBannerDto(b.Id, b.Title, b.ImageUrl, b.LinkUrl, b.SortOrder, b.Enabled, b.CreatedAt, b.UpdatedAt))
+            .ToListAsync();
+    }
+
+    public async Task<(HomeBannerDto? Result, string? Error)> CreateBannerAsync(SaveHomeBannerRequest req)
+    {
+        var (ok, error, image, title, link) = ValidateBanner(req);
+        if (!ok) return (null, error);
+
+        var banner = new HomeBanner
+        {
+            Title = title!,
+            ImageUrl = image!,
+            LinkUrl = link,
+            SortOrder = req.SortOrder,
+            Enabled = req.Enabled,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        _db.HomeBanners.Add(banner);
+        await _db.SaveChangesAsync();
+        return (ToBannerDto(banner), null);
+    }
+
+    public async Task<(HomeBannerDto? Result, string? Error)> UpdateBannerAsync(int id, SaveHomeBannerRequest req)
+    {
+        var banner = await _db.HomeBanners.FindAsync(id);
+        if (banner == null) return (null, "广告不存在");
+
+        var (ok, error, image, title, link) = ValidateBanner(req);
+        if (!ok) return (null, error);
+
+        banner.Title = title!;
+        banner.ImageUrl = image!;
+        banner.LinkUrl = link;
+        banner.SortOrder = req.SortOrder;
+        banner.Enabled = req.Enabled;
+        banner.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return (ToBannerDto(banner), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteBannerAsync(int id)
+    {
+        var banner = await _db.HomeBanners.FindAsync(id);
+        if (banner == null) return (false, "广告不存在");
+        _db.HomeBanners.Remove(banner);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    private static (bool Ok, string? Error, string? Image, string? Title, string? Link) ValidateBanner(SaveHomeBannerRequest req)
+    {
+        var title = (req.Title ?? "").Trim();
+        if (title.Length is < 1 or > 60) return (false, "标题长度 1–60", null, null, null);
+
+        var image = (req.ImageUrl ?? "").Trim();
+        if (string.IsNullOrEmpty(image)) return (false, "请上传或填写图片", null, null, null);
+        if (image.Length > 900_000) return (false, "图片过大，请压缩后上传", null, null, null);
+        if (!(image.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+              || image.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+              || image.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
+              || image.StartsWith("/")))
+            return (false, "图片地址无效", null, null, null);
+
+        var link = string.IsNullOrWhiteSpace(req.LinkUrl) ? null : req.LinkUrl.Trim();
+        if (link is { Length: > 300 }) return (false, "链接过长", null, null, null);
+
+        return (true, null, image, title, link);
+    }
+
+    private static HomeBannerDto ToBannerDto(HomeBanner b) =>
+        new(b.Id, b.Title, b.ImageUrl, b.LinkUrl, b.SortOrder, b.Enabled, b.CreatedAt, b.UpdatedAt);
+
+    private Task LogAsync(int adminId, string targetType, int targetId, string action, string? reason)
+    {
+        _db.ModerationLogs.Add(new ModerationLog
+        {
+            AdminId = adminId,
+            TargetType = targetType,
+            TargetId = targetId,
+            Action = action,
+            Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+            CreatedAt = DateTime.UtcNow
+        });
+        return Task.CompletedTask;
+    }
+}

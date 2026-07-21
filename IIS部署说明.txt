@@ -1,0 +1,80 @@
+BS Forum — IIS 部署说明
+========================
+
+一、环境准备（服务器只需做一次）
+--------------------------------
+1. 安装 IIS（启用「ASP.NET」相关功能可选，核心靠 Hosting Bundle）
+2. 安装 .NET 8 Hosting Bundle：
+   https://dotnet.microsoft.com/permalink/dotnetcore-current-windows-runtime-bundle-installer
+3. 安装完成后执行 iisreset
+
+开发机还需要：.NET 8 SDK、Node.js LTS
+
+
+二、一键发布
+------------
+双击或在命令行运行项目根目录：
+
+  publish-iis.bat
+
+默认输出到：
+
+  publish\iis\
+
+发布到指定 IIS 物理路径：
+
+  publish-iis.bat "C:\inetpub\wwwroot\BSForum"
+
+脚本会：构建 Vue 前端 → 发布 ASP.NET Core → 合并到 wwwroot
+再次发布时会尽量保留已有 App_Data\forum.db，避免覆盖数据。
+
+
+三、IIS 站点配置
+----------------
+1. 新建网站（或应用程序）
+   - 物理路径：publish\iis 或你指定的目录
+   - 绑定：例如 http://*:80 或指定主机名/端口
+
+2. 应用程序池
+   - .NET CLR 版本：无托管代码
+   - 托管管道模式：集成
+   - 标识：ApplicationPoolIdentity（默认即可）
+
+3. 写权限（重要，SQLite 需要）
+   对站点物理路径（至少 App_Data、logs）授予应用程序池「修改」权限。
+   一键修复（在服务器上以管理员运行）：
+
+     powershell -ExecutionPolicy Bypass -File scripts\fix-sqlite-permissions.ps1 -PublishDir "站点物理路径" -AppPoolName "应用程序池名"
+
+   手工：右键 App_Data → 属性 → 安全 → 编辑 → 添加
+     IIS AppPool\你的池名称  → 勾选「修改」
+   注意：SQLite WAL 模式会在 App_Data 下写 forum.db-wal / forum.db-shm，
+   所以必须是目录可写，不能只给 forum.db 文件写权限。
+
+4. 生产密钥
+   编辑站点目录下 appsettings.Production.json：
+   把 Jwt:Key 改成至少 32 位的随机字符串
+
+
+四、验证
+--------
+浏览器打开站点首页 → 登录 admin / admin123 → 能发帖、回帖、后台「新增分类」即成功。
+
+
+五、常见问题
+------------
+- 502.5 / 500.30：未装 Hosting Bundle，或装完未 iisreset
+- 500.30 + 事件日志 UNIQUE InviteCode：已修复；若旧库损坏可删 App_Data\forum.db* 后回收应用程序池
+- 创建分类失败 / SQLite Error 8 readonly database：
+    App_Data（及站点目录）对应用程序池无写权限。运行 fix-sqlite-permissions.ps1，
+    或 icacls "站点\App_Data" /grant "IIS AppPool\池名:(OI)(CI)M" /T
+    Linux：chown -R 运行用户 App_Data logs && chmod -R u+rwX App_Data logs
+- 编辑/删除分类报 405 Method Not Allowed：
+    IIS 的 WebDAV 拦截了 PUT/DELETE。发布脚本已在 web.config 移除 WebDAV；
+    若旧站点，把最新 web.config 覆盖上去，或在站点 web.config 的 system.webServer 中加入：
+      <modules><remove name="WebDAVModule" /></modules>
+      <handlers><remove name="WebDAV" /></handlers>
+    然后回收应用程序池
+- 刷新子路由 404：确认 wwwroot\index.html 存在
+- 排查日志：站点目录 logs\stdout_*.log（发布脚本已默认开启）
+- 前后端分离另外部署：把 Cors:Origins 配成前端地址；同站托管则可不配

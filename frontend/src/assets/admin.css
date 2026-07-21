@@ -1,0 +1,181 @@
+/* Admin shared styles */
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  color: var(--ink, #142033);
+}
+
+.admin-panel {
+  background: #fff;
+  border-radius: var(--radius, 16px);
+  box-shadow: var(--shadow, 0 10px 30px rgba(20, 32, 51, 0.06));
+  overflow: hidden;
+  border: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+}
+
+.admin-panel-hd {
+  padding: 14px 18px;
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f5f7fa 100%);
+  color: var(--ink, #142033);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: var(--muted, #7a869c);
+  font-size: 12px;
+  border-bottom: 2px solid var(--line, rgba(20, 32, 51, 0.08));
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+  color: var(--ink, #142033);
+}
+
+.admin-table tr:hover td {
+  background: #f8fafc;
+}
+
+.admin-table .td-title {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--muted, #7a869c);
+  border-top: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+}
+.pagination-info {
+  font-size: 12px;
+  color: var(--muted, #7a869c);
+}
+.pagination-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pagination-ctrl button {
+  padding: 6px 14px;
+  border: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--ink-soft, #3d4a63);
+}
+.pagination-ctrl button:hover:not(:disabled) {
+  border-color: var(--accent, #0d9488);
+  color: var(--accent-deep, #0f766e);
+  background: var(--accent-soft, rgba(13, 148, 136, 0.12));
+}
+.pagination-ctrl button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pagination-size select {
+  padding: 4px 10px;
+  border: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--ink-soft, #3d4a63);
+  cursor: pointer;
+  outline: none;
+}
+.pagination-size select:focus {
+  border-color: var(--accent, #0d9488);
+}
+
+.btn-forum.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.btn-outline-modern.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+/* Admin button system — consistent with forum theme */
+.admin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-decoration: none;
+  background: #fff;
+}
+.admin-btn-primary {
+  background: var(--ink, #142033);
+  border-color: var(--ink, #142033);
+  color: #fff;
+}
+.admin-btn-primary:hover {
+  background: var(--accent-deep, #0f766e);
+  border-color: var(--accent-deep, #0f766e);
+  color: #fff;
+}
+.admin-btn-outline {
+  border-color: #d0d5dd;
+  color: var(--ink-soft, #3d4a63);
+}
+.admin-btn-outline:hover {
+  border-color: var(--accent, #0d9488);
+  color: var(--accent-deep, #0f766e);
+  background: var(--accent-soft, rgba(13, 148, 136, 0.08));
+}
+.admin-btn-danger {
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+.admin-btn-danger:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #b91c1c;
+}
+.admin-btn-warning {
+  border-color: #fcd34d;
+  color: #b45309;
+}
+.admin-btn-warning:hover {
+  background: #fffbeb;
+  border-color: #fbbf24;
+  color: #92400e;
+}
