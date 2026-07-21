@@ -109,9 +109,10 @@ public class CommunityService
         var followeeIds = await _db.UserFollows.Where(f => f.FollowerId == userId).Select(f => f.FolloweeId).ToListAsync();
         if (followeeIds.Count == 0) return [];
 
+        var blocked = await GetBlockedUserIdsAsync(userId);
         return await _db.Threads
             .Include(t => t.Forum).Include(t => t.Author)
-            .Where(t => followeeIds.Contains(t.AuthorId) && !t.IsHidden)
+            .Where(t => followeeIds.Contains(t.AuthorId) && !t.IsHidden && !t.PendingReview && !blocked.Contains(t.AuthorId))
             .OrderByDescending(t => t.CreatedAt)
             .Take(take)
             .Select(t => new FeedItemDto(t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.AuthorId, t.CreatedAt, "thread"))
@@ -188,8 +189,60 @@ public class CommunityService
 
     public async Task<List<ShopItemDto>> GetShopAsync() =>
         await _db.ShopItems.Where(s => s.Enabled).OrderBy(s => s.SortOrder)
-            .Select(s => new ShopItemDto(s.Id, s.Sku, s.Name, s.Description, s.Currency, s.Price, s.ItemType, s.Meta))
+            .Select(s => new ShopItemDto(s.Id, s.Sku, s.Name, s.Description, s.Currency, s.Price, s.ItemType, s.Meta, s.Enabled, s.SortOrder))
             .ToListAsync();
+
+    public async Task<List<ShopItemDto>> AdminListShopAsync() =>
+        await _db.ShopItems.OrderBy(s => s.SortOrder).ThenBy(s => s.Id)
+            .Select(s => new ShopItemDto(s.Id, s.Sku, s.Name, s.Description, s.Currency, s.Price, s.ItemType, s.Meta, s.Enabled, s.SortOrder))
+            .ToListAsync();
+
+    public async Task<(ShopItemDto? Result, string? Error)> AdminSaveShopAsync(int? id, SaveShopItemRequest req)
+    {
+        var sku = (req.Sku ?? "").Trim();
+        var name = (req.Name ?? "").Trim();
+        if (sku.Length < 1 || name.Length < 1) return (null, "SKU 与名称必填");
+        if (req.Price < 0) return (null, "价格无效");
+        var currency = (req.Currency ?? "coins").Trim().ToLowerInvariant();
+        if (currency is not ("coins" or "points")) return (null, "货币仅支持 coins/points");
+        var itemType = (req.ItemType ?? "").Trim();
+        if (itemType.Length < 1) return (null, "商品类型必填");
+
+        ShopItem item;
+        if (id == null)
+        {
+            if (await _db.ShopItems.AnyAsync(s => s.Sku == sku)) return (null, "SKU 已存在");
+            item = new ShopItem();
+            _db.ShopItems.Add(item);
+        }
+        else
+        {
+            item = await _db.ShopItems.FindAsync(id.Value);
+            if (item == null) return (null, "商品不存在");
+            if (await _db.ShopItems.AnyAsync(s => s.Sku == sku && s.Id != id.Value)) return (null, "SKU 已存在");
+        }
+
+        item.Sku = sku;
+        item.Name = name;
+        item.Description = (req.Description ?? "").Trim();
+        item.Currency = currency;
+        item.Price = req.Price;
+        item.ItemType = itemType;
+        item.Meta = req.Meta;
+        item.Enabled = req.Enabled;
+        item.SortOrder = req.SortOrder;
+        await _db.SaveChangesAsync();
+        return (new ShopItemDto(item.Id, item.Sku, item.Name, item.Description, item.Currency, item.Price, item.ItemType, item.Meta, item.Enabled, item.SortOrder), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> AdminDeleteShopAsync(int id)
+    {
+        var item = await _db.ShopItems.FindAsync(id);
+        if (item == null) return (false, "商品不存在");
+        item.Enabled = false;
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
 
     public async Task<(ShopBuyResultDto? Result, string? Error)> BuyAsync(int userId, int itemId)
     {
@@ -340,7 +393,7 @@ public class CommunityService
         var q = _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Where(t => !t.IsHidden && t.ThreadTags.Any(tt => tt.TagId == tag.Id));
+            .Where(t => !t.IsHidden && !t.PendingReview && t.ThreadTags.Any(tt => tt.TagId == tag.Id));
 
         var total = await q.CountAsync();
         var threads = await q
@@ -396,10 +449,49 @@ public class CommunityService
         if (!string.IsNullOrWhiteSpace(status))
             q = q.Where(r => r.Status == status.Trim().ToLowerInvariant());
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(r => r.CreatedAt)
+        var rows = await q.OrderByDescending(r => r.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(r => new ReportItemDto(r.Id, r.TargetType, r.TargetId, r.Reason, r.Status, r.Reporter.Nickname, r.CreatedAt, r.HandleNote))
             .ToListAsync();
+
+        var threadIds = rows.Where(r => r.TargetType == "thread").Select(r => r.TargetId).Distinct().ToList();
+        var postIds = rows.Where(r => r.TargetType == "post").Select(r => r.TargetId).Distinct().ToList();
+        var userIds = rows.Where(r => r.TargetType == "user").Select(r => r.TargetId).Distinct().ToList();
+
+        var threads = await _db.Threads.Include(t => t.Author).Where(t => threadIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id);
+        var posts = await _db.Posts.Include(p => p.Thread).Include(p => p.Author)
+            .Where(p => postIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+        var users = await _db.Users.Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id);
+
+        var items = rows.Select(r =>
+        {
+            string? title = null;
+            int? threadId = null;
+            string? targetNick = null;
+            if (r.TargetType == "thread" && threads.TryGetValue(r.TargetId, out var t))
+            {
+                title = t.Title;
+                threadId = t.Id;
+                targetNick = t.Author?.Nickname;
+            }
+            else if (r.TargetType == "post" && posts.TryGetValue(r.TargetId, out var p))
+            {
+                title = p.Thread?.Title;
+                threadId = p.ThreadId;
+                targetNick = p.Author?.Nickname;
+            }
+            else if (r.TargetType == "user" && users.TryGetValue(r.TargetId, out var u))
+            {
+                targetNick = u.Nickname;
+                title = u.Nickname;
+            }
+            return new ReportItemDto(
+                r.Id, r.TargetType, r.TargetId, r.Reason, r.Status,
+                r.Reporter.Nickname, r.CreatedAt, r.HandleNote,
+                title, threadId, targetNick);
+        }).ToList();
+
         return new PagedResult<ReportItemDto>(items, total, page, pageSize);
     }
 
@@ -411,8 +503,29 @@ public class CommunityService
 
         if (action == "hide_thread" && report.TargetType == "thread")
             await admin.SetThreadHiddenAsync(adminId, report.TargetId, true, $"举报处理#{reportId}");
+        else if (action == "hide_post" && report.TargetType == "post")
+        {
+            var post = await _db.Posts.Include(p => p.Thread).ThenInclude(t => t.Forum)
+                .FirstOrDefaultAsync(p => p.Id == report.TargetId);
+            if (post != null && !post.IsDeleted && post.Floor > 1)
+            {
+                post.IsDeleted = true;
+                post.DeletedAt = DateTime.UtcNow;
+                post.Content = "";
+                post.ImagesJson = null;
+                post.Thread.ReplyCount = Math.Max(0, post.Thread.ReplyCount - 1);
+                if (post.Thread.Forum != null)
+                    post.Thread.Forum.PostCount = Math.Max(0, post.Thread.Forum.PostCount - 1);
+            }
+        }
         else if (action == "mute_user" && report.TargetType == "user")
             await admin.MuteUserAsync(adminId, report.TargetId, 7, $"举报处理#{reportId}");
+        else if (action == "mute_user" && report.TargetType == "thread")
+        {
+            var thread = await _db.Threads.FindAsync(report.TargetId);
+            if (thread != null)
+                await admin.MuteUserAsync(adminId, thread.AuthorId, 7, $"举报处理#{reportId}");
+        }
 
         report.Status = action == "reject" ? "rejected" : "resolved";
         report.HandledByAdminId = adminId;

@@ -271,7 +271,12 @@ public class UsersController : ControllerBase
     [HttpGet("{id:int}/purchases")]
     public async Task<ActionResult<List<PurchaseHistoryDto>>> GetPurchases(int id)
     {
-        if (await _auth.GetProfileAsync(id) == null) return NotFound(new ApiMessage("用户不存在"));
+        var uid = JwtHelper.GetUserId(User);
+        var isAdmin = User.IsInRole("Admin");
+        var target = await _db.Users.FindAsync(id);
+        if (target == null) return NotFound(new ApiMessage("用户不存在"));
+        if (uid != id && !isAdmin && !target.ShowPurchases)
+            return StatusCode(403, new ApiMessage("对方未公开该内容"));
         return Ok(await _threads.GetPurchasesAsync(id));
     }
 
@@ -279,7 +284,12 @@ public class UsersController : ControllerBase
     [HttpGet("{id:int}/favorites")]
     public async Task<ActionResult<List<FavoriteItemDto>>> GetFavorites(int id, [FromQuery] int? folderId = null)
     {
-        if (await _auth.GetProfileAsync(id) == null) return NotFound(new ApiMessage("用户不存在"));
+        var uid = JwtHelper.GetUserId(User);
+        var isAdmin = User.IsInRole("Admin");
+        var target = await _db.Users.FindAsync(id);
+        if (target == null) return NotFound(new ApiMessage("用户不存在"));
+        if (uid != id && !isAdmin && !target.ShowFavorites)
+            return StatusCode(403, new ApiMessage("对方未公开该内容"));
         return Ok(await _threads.GetFavoritesAsync(id, folderId));
     }
 }

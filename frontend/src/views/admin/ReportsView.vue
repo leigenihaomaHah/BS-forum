@@ -2,7 +2,7 @@
   <div class="admin-page">
     <div class="page-header">
       <h2 class="page-title">举报处理</h2>
-      <select v-model="status" class="form-control form-control-sm" style="width:120px" @change="load(1)">
+      <select v-model="status" class="form-control form-control-sm" style="width:120px" @change="load">
         <option value="pending">待处理</option>
         <option value="resolved">已处理</option>
         <option value="rejected">已驳回</option>
@@ -19,8 +19,11 @@
         <tbody>
           <tr v-for="r in items" :key="r.id">
             <td>{{ r.id }}</td>
-            <td>{{ r.targetType }}</td>
-            <td>{{ r.targetId }}</td>
+            <td>{{ typeLabel(r.targetType) }}</td>
+            <td>
+              <a v-if="targetHref(r)" :href="targetHref(r)" target="_blank" rel="noopener">{{ targetText(r) }}</a>
+              <span v-else>#{{ r.targetId }}</span>
+            </td>
             <td>{{ r.reason }}</td>
             <td>{{ r.reporterNickname }}</td>
             <td>{{ r.status }}</td>
@@ -28,8 +31,9 @@
             <td class="ops" v-if="r.status === 'pending'">
               <button class="admin-btn admin-btn-outline" @click="handle(r, 'resolve')">通过</button>
               <button class="admin-btn admin-btn-outline" @click="handle(r, 'reject')">驳回</button>
-              <button v-if="r.targetType === 'thread'" class="admin-btn admin-btn-danger" @click="handle(r, 'hide_thread')">拉黑帖</button>
-              <button v-if="r.targetType === 'user'" class="admin-btn admin-btn-danger" @click="handle(r, 'mute_user')">禁言</button>
+              <button v-if="r.targetType === 'thread'" class="admin-btn admin-btn-danger" @click="handle(r, 'hide_thread')">隐藏帖</button>
+              <button v-if="r.targetType === 'post'" class="admin-btn admin-btn-danger" @click="handle(r, 'hide_post')">删楼</button>
+              <button v-if="r.targetType === 'user' || r.targetType === 'thread'" class="admin-btn admin-btn-danger" @click="handle(r, 'mute_user')">禁言</button>
             </td>
             <td v-else>-</td>
           </tr>
@@ -46,7 +50,6 @@ import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
 
 const toast = useToastStore()
-
 const items = ref([])
 const status = ref('pending')
 
@@ -54,6 +57,23 @@ function fmt(iso) {
   if (!iso) return ''
   const d = new Date(iso)
   return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function typeLabel(t) {
+  return ({ thread: '帖子', post: '回复', user: '用户' })[t] || t
+}
+
+function targetText(r) {
+  if (r.targetTitle) return r.targetTitle
+  if (r.targetUserNickname) return r.targetUserNickname
+  return `#${r.targetId}`
+}
+
+function targetHref(r) {
+  if (r.targetType === 'thread') return `/thread/${r.threadId || r.targetId}`
+  if (r.targetType === 'post' && r.threadId) return `/thread/${r.threadId}`
+  if (r.targetType === 'user') return `/user/${r.targetId}`
+  return null
 }
 
 async function load() {
@@ -65,6 +85,7 @@ async function handle(r, action) {
   const note = prompt('处理备注（可空）') ?? ''
   try {
     await api.post(`/admin/reports/${r.id}/handle`, { action, note: note || null })
+    toast.success('已处理')
     await load()
   } catch (e) { toast.error(e.message) }
 }
@@ -74,5 +95,4 @@ load()
 
 <style scoped>
 .ops { display: flex; flex-wrap: wrap; gap: 4px; }
-
 </style>

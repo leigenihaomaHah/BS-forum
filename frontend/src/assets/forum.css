@@ -297,8 +297,15 @@ a:hover {
   border-radius: var(--radius);
   background: var(--surface-solid);
   box-shadow: var(--shadow);
-  overflow: hidden;
   transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+/* 发帖/回帖等面板需露出 @提及下拉；版块列表卡片仍裁切圆角内内容 */
+.panel {
+  overflow: visible;
+}
+.forum-section {
+  overflow: hidden;
 }
 
 .panel:hover,
@@ -865,3 +872,27 @@ a:hover {
     align-items: flex-start;
   }
 }
+
+/* Avatar frames (shop cosmetics) */
+.avatar-frame {
+  display: inline-block;
+  border-radius: 50%;
+  padding: 3px;
+  line-height: 0;
+}
+.avatar-frame.frame-gold {
+  background: linear-gradient(135deg, #f6d365, #fda085);
+}
+.avatar-frame.frame-teal {
+  background: linear-gradient(135deg, #0d9488, #14b8a6);
+}
+.avatar-frame img {
+  border-radius: 50%;
+  display: block;
+}
+.avatar-frame .post-avatar,
+.avatar-frame .profile-avatar,
+.avatar-frame .header-avatar {
+  border-radius: 50%;
+}
+

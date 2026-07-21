@@ -11,7 +11,9 @@
         <div class="panel">
           <div class="panel-header"><span class="accent"></span>{{ profile.nickname }} 的资料</div>
           <div class="p-4 text-center">
-            <img :src="profile.avatar || defaultAvatar(profile.nickname)" class="profile-avatar mb-2" alt="" />
+            <span class="avatar-frame" :class="'frame-' + (profile.avatarFrame || '')">
+              <img :src="profile.avatar || defaultAvatar(profile.nickname)" class="profile-avatar mb-2" alt="" />
+            </span>
             <div class="mb-3">
               <span
                 class="level-badge"
@@ -24,16 +26,26 @@
             <div class="follow-row mb-2">
               <span>粉丝 {{ profile.followerCount ?? 0 }} · 关注 {{ profile.followingCount ?? 0 }}</span>
               <button
-                v-if="auth.isLoggedIn && auth.user.id !== profile.id"
+                v-if="auth.isLoggedIn && !isSelf"
                 class="btn btn-sm ms-2"
                 :class="profile.followedByMe ? 'btn-outline-secondary' : 'btn-forum'"
                 @click="toggleFollow"
               >{{ profile.followedByMe ? '已关注' : '关注' }}</button>
               <button
-                v-if="auth.isLoggedIn && auth.user.id !== profile.id"
+                v-if="auth.isLoggedIn && !isSelf"
                 class="btn btn-sm btn-outline-secondary ms-1"
                 @click="toggleBlock"
               >{{ blocked ? '已屏蔽' : '屏蔽' }}</button>
+              <button
+                v-if="auth.isLoggedIn && !isSelf"
+                class="btn btn-sm btn-forum ms-1"
+                @click="router.push(`/messages?userId=${profile.id}`)"
+              >发私信</button>
+              <router-link
+                v-if="isSelf"
+                to="/settings"
+                class="btn btn-sm btn-outline-secondary ms-2"
+              >编辑资料</router-link>
             </div>
             <div v-if="badges.length" class="badge-row mb-2">
               <span v-for="b in badges.filter(x => x.earnedAt)" :key="b.code" class="ubadge" :title="b.description">{{ b.name }}</span>
@@ -120,8 +132,18 @@
         <div class="panel mt-3">
           <div class="panel-header"><span class="accent"></span>
             <div class="tab-nav d-inline-flex gap-2 ms-2">
-              <button class="tab-btn" :class="{ active: activeTab === 'purchases' }" @click="activeTab = 'purchases'">购买记录</button>
-              <button class="tab-btn" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏</button>
+              <button
+                v-if="showPrivateTabs"
+                class="tab-btn"
+                :class="{ active: activeTab === 'purchases' }"
+                @click="activeTab = 'purchases'"
+              >购买记录</button>
+              <button
+                v-if="showPrivateTabs"
+                class="tab-btn"
+                :class="{ active: activeTab === 'favorites' }"
+                @click="activeTab = 'favorites'"
+              >收藏</button>
               <button class="tab-btn" :class="{ active: activeTab === 'activity' }" @click="activeTab = 'activity'">动态</button>
             </div>
           </div>
@@ -179,7 +201,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
@@ -191,6 +213,7 @@ import { formatTime } from '../utils/time.js'
 const auth = useAuthStore()
 const toast = useToastStore()
 const route = useRoute()
+const router = useRouter()
 const profile = ref(null)
 const badges = ref([])
 const loading = ref(true)
@@ -202,6 +225,9 @@ const favorites = ref([])
 const favLoading = ref(false)
 const activities = ref([])
 const actLoading = ref(false)
+
+const isSelf = computed(() => auth.user?.id === Number(route.params.id))
+const showPrivateTabs = computed(() => isSelf.value)
 
 const currentLevel = computed(() => profile.value ? getLevel(profile.value.points) : getLevels()[0])
 const nextLevel = computed(() => profile.value ? getNextLevel(profile.value.points) : null)
@@ -244,9 +270,13 @@ async function loadActivity() {
 }
 
 async function loadTab(tab) {
-  if (tab === 'purchases') await loadPurchases()
-  else if (tab === 'favorites') await loadFavorites()
-  else await loadActivity()
+  if (tab === 'purchases') {
+    if (!showPrivateTabs.value) return
+    await loadPurchases()
+  } else if (tab === 'favorites') {
+    if (!showPrivateTabs.value) return
+    await loadFavorites()
+  } else await loadActivity()
 }
 
 async function load() {
@@ -262,6 +292,9 @@ async function load() {
     profile.value = null
   } finally {
     loading.value = false
+  }
+  if (!showPrivateTabs.value && (activeTab.value === 'purchases' || activeTab.value === 'favorites')) {
+    activeTab.value = 'activity'
   }
   await loadTab(activeTab.value)
 }

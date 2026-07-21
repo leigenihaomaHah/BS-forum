@@ -100,4 +100,18 @@ public class AdminRechargeController : ControllerBase
         if (!ok) return BadRequest(new ApiMessage(error!));
         return Ok(new ApiMessage("已取消"));
     }
+
+    [HttpPost("cards/generate")]
+    public async Task<IActionResult> Generate([FromBody] GenerateCardsRequest req)
+    {
+        var (result, error) = await _recharge.GenerateCardsAsync(req.PackageId, req.Count);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpGet("cards")]
+    public async Task<ActionResult<PagedResult<RechargeCardDto>>> Cards(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] int? packageId = null, [FromQuery] bool? used = null)
+        => Ok(await _recharge.AdminCardsAsync(page, pageSize, packageId, used));
 }

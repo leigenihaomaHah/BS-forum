@@ -14,11 +14,13 @@ public class AdminController : ControllerBase
 {
     private readonly AdminService _admin;
     private readonly ImageMigrationService _migrator;
+    private readonly CommunityService _community;
 
-    public AdminController(AdminService admin, ImageMigrationService migrator)
+    public AdminController(AdminService admin, ImageMigrationService migrator, CommunityService community)
     {
         _admin = admin;
         _migrator = migrator;
+        _community = community;
     }
 
     [HttpGet("stats")]
@@ -168,6 +170,64 @@ public class AdminController : ControllerBase
         var (ok, error, message) = await _admin.SetThreadEssenceAsync(uid.Value, id, false, req?.Reason);
         if (!ok) return BadRequest(new ApiMessage(error!));
         return Ok(new ApiMessage(message ?? "已取消精品"));
+    }
+
+    [HttpPost("threads/{id:int}/approve")]
+    public async Task<IActionResult> ApproveThread(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _admin.ApproveThreadReviewAsync(uid.Value, id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已通过审核"));
+    }
+
+    [HttpPost("threads/{id:int}/reject")]
+    public async Task<IActionResult> RejectThread(int id, [FromBody] ModerationReasonRequest? req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _admin.RejectThreadReviewAsync(uid.Value, id, req?.Reason);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已驳回"));
+    }
+
+    [HttpPost("threads/{id:int}/move")]
+    public async Task<IActionResult> MoveThread(int id, [FromBody] MoveThreadRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _admin.MoveThreadAsync(uid.Value, id, req.ForumId);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已移动版块"));
+    }
+
+    [HttpGet("shop")]
+    public async Task<ActionResult<List<ShopItemDto>>> ShopItems()
+        => Ok(await _community.AdminListShopAsync());
+
+    [HttpPost("shop")]
+    public async Task<IActionResult> CreateShopItem([FromBody] SaveShopItemRequest req)
+    {
+        var (result, error) = await _community.AdminSaveShopAsync(null, req);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpPut("shop/{id:int}")]
+    public async Task<IActionResult> UpdateShopItem(int id, [FromBody] SaveShopItemRequest req)
+    {
+        var (result, error) = await _community.AdminSaveShopAsync(id, req);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpDelete("shop/{id:int}")]
+    public async Task<IActionResult> DeleteShopItem(int id)
+    {
+        var (ok, error) = await _community.AdminDeleteShopAsync(id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已删除"));
     }
 
     [HttpGet("moderation-logs")]

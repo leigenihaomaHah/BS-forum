@@ -11,7 +11,9 @@ public class NotificationService
 
     public NotificationService(AppDbContext db) => _db = db;
 
-    public Task AddReplyNotificationAsync(int authorId, int fromUserId, string fromNickname, int threadId, string threadTitle, string content)
+    public Task AddReplyNotificationAsync(
+        int authorId, int fromUserId, string fromNickname, int threadId, string threadTitle, string content,
+        int postId = 0, int floor = 0)
     {
         if (authorId == fromUserId) return Task.CompletedTask;
         var snippet = content.Length > 80 ? content[..80] + "…" : content;
@@ -24,12 +26,16 @@ public class NotificationService
             FromUserId = fromUserId,
             FromNickname = fromNickname,
             Content = $"回复了你：{snippet}",
+            PostId = postId,
+            Floor = floor,
             CreatedAt = DateTime.UtcNow
         });
         return Task.CompletedTask;
     }
 
-    public Task AddMentionNotificationAsync(int userId, int fromUserId, string fromNickname, int threadId, string threadTitle)
+    public Task AddMentionNotificationAsync(
+        int userId, int fromUserId, string fromNickname, int threadId, string threadTitle,
+        int postId = 0, int floor = 0)
     {
         if (userId == fromUserId) return Task.CompletedTask;
         _db.Notifications.Add(new Notification
@@ -41,6 +47,8 @@ public class NotificationService
             FromUserId = fromUserId,
             FromNickname = fromNickname,
             Content = "在回复中提到了你",
+            PostId = postId,
+            Floor = floor,
             CreatedAt = DateTime.UtcNow
         });
         return Task.CompletedTask;
@@ -112,7 +120,7 @@ public class NotificationService
         return await q.OrderByDescending(n => n.CreatedAt).Take(take)
             .Select(n => new NotificationDto(
                 n.Id, n.Type, n.ThreadId, n.ThreadTitle, n.FromUserId,
-                n.FromNickname, n.Content, n.Read, n.CreatedAt))
+                n.FromNickname, n.Content, n.Read, n.CreatedAt, n.PostId, n.Floor))
             .ToListAsync();
     }
 

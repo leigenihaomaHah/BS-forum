@@ -9,9 +9,17 @@ public record RegisterRequest(
     string? CaptchaCode = null);
 
 public record CaptchaDto(string CaptchaId, string ImageBase64);
-public record LoginRequest(string Username, string Password);
-public record ResetPasswordRequest(string Username, string Nickname, string NewPassword);
-public record UpdateSettingsRequest(string? Nickname, string? Password, string? Avatar);
+public record LoginRequest(string Username, string Password, string? CaptchaId = null, string? CaptchaCode = null);
+public record ResetPasswordRequest(string Username, string Nickname, string NewPassword, string? CaptchaId = null, string? CaptchaCode = null);
+public record UpdateSettingsRequest(
+    string? Nickname,
+    string? Password,
+    string? Avatar,
+    bool? ShowPurchases = null,
+    bool? ShowFavorites = null,
+    string? Email = null,
+    bool? NotifyReply = null,
+    bool? NotifyMention = null);
 
 public record AuthResponse(
     string Token,
@@ -38,7 +46,12 @@ public record UserDto(
     int VipTier,
     string VipTierName,
     int LotteryTickets,
-    string? AvatarFrame);
+    string? AvatarFrame,
+    bool ShowPurchases = false,
+    bool ShowFavorites = false,
+    string? Email = null,
+    bool NotifyReply = true,
+    bool NotifyMention = true);
 
 public record UserProfileDto(
     int Id,
@@ -159,7 +172,9 @@ public record PostDto(
     int? ReplyToPostId = null,
     int? ReplyToFloor = null,
     string? ReplyToNickname = null,
-    string? ReplyToContent = null);
+    string? ReplyToContent = null,
+    DateTime? EditedAt = null,
+    bool Deleted = false);
 
 public record CreateThreadRequest(
     int ForumId,
@@ -276,6 +291,14 @@ public record SearchHitDto(
 
 public record SearchResultDto(List<SearchHitDto> Items, int Total);
 
+public record SearchQuery(
+    string? Q = null,
+    int? ForumId = null,
+    int? AuthorId = null,
+    string? Type = null,
+    DateTime? From = null,
+    DateTime? To = null);
+
 public record NotificationDto(
     int Id,
     string Type,
@@ -285,7 +308,9 @@ public record NotificationDto(
     string FromNickname,
     string Content,
     bool Read,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    int PostId = 0,
+    int Floor = 0);
 
 public record NotificationSummaryDto(
     int TotalUnread,
@@ -402,7 +427,14 @@ public record AdminUserItemDto(
     bool IsVip = false,
     DateTime? VipUntil = null);
 
-public record UpdateAdminUserRequest(string? Nickname, int? Points, int? Coins, string? Password);
+public record UpdateAdminUserRequest(
+    string? Nickname,
+    int? Points,
+    int? Coins,
+    string? Password,
+    bool? IsVip = null,
+    int? VipDays = null,
+    int? VipTier = null);
 public record UpdateRoleRequest(string Role);
 public record ModerationReasonRequest(string? Reason);
 public record MuteUserRequest(int? Days, string? Reason);
@@ -420,7 +452,11 @@ public record AdminThreadItemDto(
     bool IsHidden,
     bool RepliesLocked,
     bool IsPinned,
-    bool IsEssence);
+    bool IsEssence,
+    int ForumId = 0,
+    bool PendingReview = false);
+
+public record MoveThreadRequest(int ForumId);
 
 public record ModerationLogDto(
     int Id,
@@ -522,15 +558,45 @@ public record TagThreadItemDto(
     int Id, string Title, int ForumId, string ForumName, int Views, int ReplyCount,
     DateTime CreatedAt, DateTime LastReplyAt, string AuthorNickname, int AuthorLevel,
     string AuthorLevelName, bool IsEssence);
-public record ShopItemDto(int Id, string Sku, string Name, string Description, string Currency, int Price, string ItemType, string? Meta);
+public record ShopItemDto(int Id, string Sku, string Name, string Description, string Currency, int Price, string ItemType, string? Meta, bool Enabled = true, int SortOrder = 0);
+public record SaveShopItemRequest(string Sku, string Name, string Description, string Currency, int Price, string ItemType, string? Meta = null, bool Enabled = true, int SortOrder = 0);
 public record ShopBuyResultDto(string Message, int Coins, int Points, int LotteryTickets, bool IsVip, string? AvatarFrame);
 public record TaskItemDto(string Code, string Title, string Description, int Target, int Progress, bool Claimed, int RewardPoints, int RewardCoins);
 public record BadgeDto(string Code, string Name, string Description, DateTime? EarnedAt);
 public record ReportRequest(string TargetType, int TargetId, string Reason);
-public record ReportItemDto(int Id, string TargetType, int TargetId, string Reason, string Status, string ReporterNickname, DateTime CreatedAt, string? HandleNote);
-public record HandleReportRequest(string Action, string? Note); // resolve | reject | hide_thread | mute_user
+public record ReportItemDto(
+    int Id,
+    string TargetType,
+    int TargetId,
+    string Reason,
+    string Status,
+    string ReporterNickname,
+    DateTime CreatedAt,
+    string? HandleNote,
+    string? TargetTitle = null,
+    int? ThreadId = null,
+    string? TargetUserNickname = null);
+public record HandleReportRequest(string Action, string? Note); // resolve | reject | hide_thread | hide_post | mute_user
 public record ModeratorDto(int ForumId, string ForumName, int UserId, string Nickname);
 public record SetModeratorRequest(int ForumId, int UserId);
+
+public record PrivateMessageDto(
+    int Id,
+    int SenderId,
+    string SenderNickname,
+    int ReceiverId,
+    string ReceiverNickname,
+    string Content,
+    bool IsRead,
+    DateTime CreatedAt);
+public record ConversationDto(
+    int PeerId,
+    string PeerNickname,
+    string? PeerAvatar,
+    string LastContent,
+    DateTime LastAt,
+    int UnreadCount);
+public record SendMessageRequest(int ReceiverId, string Content);
 
 public record HomeBannerDto(
     int Id, string Title, string ImageUrl, string? LinkUrl, int SortOrder, bool Enabled,
@@ -581,6 +647,7 @@ public record RechargeResultDto(
     string? CardCode = null);
 
 public record GenerateRechargeCardsRequest(int PackageId, int Count = 10);
+public record GenerateCardsRequest(int PackageId, int Count);
 public record RechargeCardDto(
     int Id,
     string Code,

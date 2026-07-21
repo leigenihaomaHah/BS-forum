@@ -12,6 +12,34 @@
 
     <div class="admin-panel mb-3">
       <div class="admin-panel-hd">
+        <span>卡密生成</span>
+      </div>
+      <div class="p-3 d-flex gap-2 flex-wrap align-items-end">
+        <div>
+          <label class="form-label" style="font-size:12px">套餐</label>
+          <select v-model.number="genPackageId" class="form-control form-control-sm" style="min-width:180px">
+            <option v-for="p in packages" :key="p.id" :value="p.id">{{ p.name }} · ¥{{ p.priceYuan }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px">数量</label>
+          <input v-model.number="genCount" type="number" min="1" max="100" class="form-control form-control-sm" style="width:80px" />
+        </div>
+        <button class="admin-btn admin-btn-primary" :disabled="generating || !genPackageId" @click="generateCards">
+          {{ generating ? '生成中...' : '生成卡密' }}
+        </button>
+      </div>
+      <div v-if="generatedCodes.length" class="p-3 pt-0">
+        <div class="text-muted mb-2" style="font-size:12px">刚生成 {{ generatedCodes.length }} 张（点击复制）</div>
+        <div class="code-list">
+          <code v-for="c in generatedCodes" :key="c" class="card-code" @click="copyOne(c)">{{ c }}</code>
+        </div>
+        <button class="admin-btn admin-btn-outline mt-2" @click="copyAll">全部复制</button>
+      </div>
+    </div>
+
+    <div class="admin-panel mb-3">
+      <div class="admin-panel-hd">
         <span>申请列表</span>
         <div>
           <button class="admin-btn admin-btn-outline me-1" :class="{ active: statusFilter === 'pending' }" @click="statusFilter='pending'; loadOrders()">待处理</button>
@@ -101,9 +129,14 @@ import { useToastStore } from '../../stores/toast'
 const toast = useToastStore()
 
 const orders = ref([])
+const packages = ref([])
 const statusFilter = ref('pending')
 const lastCard = ref('')
 const lastMsg = ref('')
+const genPackageId = ref(0)
+const genCount = ref(10)
+const generating = ref(false)
+const generatedCodes = ref([])
 
 function formatTime(iso) {
   if (!iso) return '-'
@@ -126,6 +159,32 @@ async function copyOne(code) {
   } catch {
     prompt('请手动复制卡密', code)
   }
+}
+
+async function copyAll() {
+  try {
+    await navigator.clipboard.writeText(generatedCodes.value.join('\n'))
+    toast.success('已全部复制')
+  } catch { toast.error('复制失败') }
+}
+
+async function loadPackages() {
+  const { data } = await api.get('/admin/recharge/packages')
+  packages.value = data || []
+  if (packages.value.length && !genPackageId.value) genPackageId.value = packages.value[0].id
+}
+
+async function generateCards() {
+  generating.value = true
+  try {
+    const { data } = await api.post('/admin/recharge/cards/generate', {
+      packageId: genPackageId.value,
+      count: genCount.value,
+    })
+    generatedCodes.value = (data || []).map(c => c.code || c)
+    toast.success(`已生成 ${generatedCodes.value.length} 张卡密`)
+  } catch (e) { toast.error(e.message) }
+  finally { generating.value = false }
 }
 
 async function loadOrders() {
@@ -154,7 +213,9 @@ async function cancelOrder(id) {
   } catch (e) { toast.error(e.message) }
 }
 
-onMounted(loadOrders)
+onMounted(async () => {
+  await Promise.all([loadPackages(), loadOrders()])
+})
 </script>
 
 <style scoped>
@@ -166,6 +227,13 @@ onMounted(loadOrders)
   font-size: 12px;
   cursor: pointer;
   word-break: break-all;
+}
+.code-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
 }
 .card-code.full { display: block; padding: 10px; font-size: 13px; }
 .card-code:hover { background: #e4e7ec; }

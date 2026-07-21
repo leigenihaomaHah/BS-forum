@@ -160,6 +160,45 @@ public class ThreadsController : ControllerBase
     public Task<IActionResult> ModHide(int id, [FromBody] ModerationActionRequest? req)
         => RunModAsync(id, uid => _admin.SetThreadHiddenAsync(uid, id, true, req?.Reason));
 
+    [Authorize]
+    [HttpPost("{id:int}/mod/essence")]
+    public async Task<IActionResult> ModEssence(int id, [FromBody] ModerationActionRequest? req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _threads.EnsureCanModerateAsync(uid.Value, id);
+        if (!ok) return StatusCode(StatusCodes.Status403Forbidden, new ApiMessage(error!));
+        var (ok2, error2, message) = await _admin.SetThreadEssenceAsync(uid.Value, id, true, req?.Reason);
+        if (!ok2) return BadRequest(new ApiMessage(error2!));
+        return Ok(new ApiMessage(message ?? "已设为精品"));
+    }
+
+    [Authorize]
+    [HttpPost("{id:int}/mod/unessence")]
+    public async Task<IActionResult> ModUnessence(int id, [FromBody] ModerationActionRequest? req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _threads.EnsureCanModerateAsync(uid.Value, id);
+        if (!ok) return StatusCode(StatusCodes.Status403Forbidden, new ApiMessage(error!));
+        var (ok2, error2, message) = await _admin.SetThreadEssenceAsync(uid.Value, id, false, req?.Reason);
+        if (!ok2) return BadRequest(new ApiMessage(error2!));
+        return Ok(new ApiMessage(message ?? "已取消精品"));
+    }
+
+    [Authorize]
+    [HttpPost("{id:int}/mod/move")]
+    public async Task<IActionResult> ModMove(int id, [FromBody] MoveThreadRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _threads.EnsureCanModerateAsync(uid.Value, id);
+        if (!ok) return StatusCode(StatusCodes.Status403Forbidden, new ApiMessage(error!));
+        var (ok2, error2) = await _admin.MoveThreadAsync(uid.Value, id, req.ForumId);
+        if (!ok2) return BadRequest(new ApiMessage(error2!));
+        return Ok(new ApiMessage("已移动版块"));
+    }
+
     private async Task<IActionResult> RunModAsync(int threadId, Func<int, Task<(bool Ok, string? Error)>> action)
     {
         var uid = JwtHelper.GetUserId(User);

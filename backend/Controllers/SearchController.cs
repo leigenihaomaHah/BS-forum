@@ -1,4 +1,5 @@
 using ForumApi.Dtos;
+using ForumApi.Helpers;
 using ForumApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,8 +19,13 @@ public class SearchController : ControllerBase
     }
 
     [HttpGet("search")]
-    public async Task<ActionResult<SearchResultDto>> Search([FromQuery] string? q, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
-        => Ok(await _search.SearchAsync(q, page, pageSize));
+    public async Task<ActionResult<SearchResultDto>> Search(
+        [FromQuery] string? q,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] int? forumId = null,
+        [FromQuery] string? type = null)
+        => Ok(await _search.SearchAsync(q, page, pageSize, forumId, type, JwtHelper.GetUserId(User)));
 
     [HttpGet("levels")]
     public async Task<ActionResult<List<LevelRuleDto>>> Levels()

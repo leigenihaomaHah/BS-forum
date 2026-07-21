@@ -9,7 +9,12 @@
       "Bash(taskkill //F //IM dotnet.exe)",
       "Bash(taskkill //F //IM ForumApi.exe)",
       "Bash(dotnet build *)",
-      "Bash(curl -s http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"demo\",\"password\":\"demo123\"}')"
+      "Bash(curl -s http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"demo\",\"password\":\"demo123\"}')",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /F /PID 9368)",
+      "Bash(curl -s \"http://localhost:5000/api/threads/1/posts?page=1&pageSize=20\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('total='+j.total+', items='+j.items.length+', pageSize='+j.pageSize\\)}\\)\")",
+      "Bash(npm run *)"
     ]
   }
 }

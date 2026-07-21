@@ -34,6 +34,18 @@
           <label class="setting-label">新用户初始金币</label>
           <input v-model.number="settings.default_coins" class="form-control form-control-sm" type="number" min="0" style="width:100px" />
         </div>
+        <div class="setting-row">
+          <label class="setting-label">转盘单次金币</label>
+          <input v-model.number="settings.lottery_cost_coins" class="form-control form-control-sm" type="number" min="1" style="width:100px" />
+        </div>
+        <div class="setting-row">
+          <label class="setting-label">转盘每日上限</label>
+          <input v-model.number="settings.lottery_daily_limit" class="form-control form-control-sm" type="number" min="1" style="width:100px" />
+        </div>
+        <div class="setting-row">
+          <label class="setting-label">转盘保底次数</label>
+          <input v-model.number="settings.lottery_pity" class="form-control form-control-sm" type="number" min="1" style="width:100px" />
+        </div>
         <div class="mt-3">
           <button class="admin-btn admin-btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存设置' }}</button>
           <span v-if="saved" class="text-success ms-2" style="font-size:13px">已保存</span>
@@ -58,6 +70,9 @@ const settings = reactive({
   max_file_size_mb: 10,
   default_points: 0,
   default_coins: 0,
+  lottery_cost_coins: 5,
+  lottery_daily_limit: 10,
+  lottery_pity: 10,
 })
 
 async function load() {
@@ -70,6 +85,9 @@ async function load() {
       max_file_size_mb: Number(data.max_file_size_mb) || 10,
       default_points: Number(data.default_points) || 0,
       default_coins: Number(data.default_coins) || 0,
+      lottery_cost_coins: Number(data.lottery_cost_coins) || 5,
+      lottery_daily_limit: Number(data.lottery_daily_limit) || 10,
+      lottery_pity: Number(data.lottery_pity) || 10,
     })
   } catch { /* use defaults */ }
 }

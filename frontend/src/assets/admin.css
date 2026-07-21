@@ -19,8 +19,14 @@
   background: #fff;
   border-radius: var(--radius, 16px);
   box-shadow: var(--shadow, 0 10px 30px rgba(20, 32, 51, 0.06));
-  overflow: hidden;
+  /* visible：避免用户搜索/图标选择等绝对定位下拉被裁切 */
+  overflow: visible;
   border: 1px solid var(--line, rgba(20, 32, 51, 0.08));
+}
+
+/* 仅裁切内容、无浮层的面板（图表等）可加此类 */
+.admin-panel--clip {
+  overflow: hidden;
 }
 
 .admin-panel-hd {

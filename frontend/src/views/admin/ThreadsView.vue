@@ -5,6 +5,7 @@
       <div class="search-bar">
         <select v-model="status" class="form-control form-control-sm" style="width:120px" @change="load(1)">
           <option value="">全部</option>
+          <option value="pending">待审核</option>
           <option value="hidden">已拉黑</option>
           <option value="locked">禁回复</option>
           <option value="pinned">已置顶</option>
@@ -43,11 +44,12 @@
             <td>{{ t.id }}</td>
             <td class="td-title"><router-link :to="`/thread/${t.id}`" target="_blank" class="thread-link">{{ t.title }}</router-link></td>
             <td>
+              <span v-if="t.pendingReview" class="status-tag tag-warn">待审</span>
               <span v-if="t.isHidden" class="status-tag tag-danger">拉黑</span>
               <span v-if="t.repliesLocked" class="status-tag tag-warn">禁回</span>
               <span v-if="t.isPinned" class="status-tag tag-ok">置顶</span>
               <span v-if="t.isEssence" class="status-tag tag-essence">精品</span>
-              <span v-if="!t.isHidden && !t.repliesLocked && !t.isPinned && !t.isEssence" class="text-muted">-</span>
+              <span v-if="!t.pendingReview && !t.isHidden && !t.repliesLocked && !t.isPinned && !t.isEssence" class="text-muted">-</span>
             </td>
             <td>
               <span class="level-badge" :class="{ 'lv-high': t.authorLevel >= 5 }">Lv.{{ t.authorLevel }}</span>
@@ -59,6 +61,11 @@
             <td class="text-muted" style="font-size:12px">{{ fmt(t.createdAt) }}</td>
             <td class="ops">
               <button class="admin-btn admin-btn-outline" @click="copyLink(t.id)">链接</button>
+              <template v-if="t.pendingReview">
+                <button class="admin-btn admin-btn-primary" @click="approve(t)">通过</button>
+                <button class="admin-btn admin-btn-danger" @click="reject(t)">驳回</button>
+              </template>
+              <button class="admin-btn admin-btn-outline" @click="moveThread(t)">移版</button>
               <button class="admin-btn admin-btn-outline" @click="toggleHide(t)">{{ t.isHidden ? '取消拉黑' : '拉黑' }}</button>
               <button class="admin-btn admin-btn-outline" @click="toggleLock(t)">{{ t.repliesLocked ? '解禁回' : '禁回' }}</button>
               <button class="admin-btn admin-btn-outline" @click="togglePin(t)">{{ t.isPinned ? '取消置顶' : '置顶' }}</button>
@@ -89,11 +96,55 @@ const page = ref(1)
 const total = ref(0)
 const pageSize = ref(20)
 const search = ref('')
-const allowedStatus = new Set(['hidden', 'locked', 'pinned', 'essence'])
+const allowedStatus = new Set(['hidden', 'locked', 'pinned', 'essence', 'pending'])
 const status = ref(allowedStatus.has(String(route.query.status || '')) ? String(route.query.status) : '')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const selectedIds = ref([])
+const forums = ref([])
 const allSelected = computed(() => items.value.length > 0 && selectedIds.value.length === items.value.length)
+
+async function loadForums() {
+  try {
+    const { data } = await api.get('/admin/categories')
+    const list = []
+    for (const c of data || []) {
+      for (const f of c.forums || []) list.push({ id: f.id, name: `${c.name} / ${f.name}` })
+    }
+    forums.value = list
+  } catch { forums.value = [] }
+}
+
+async function approve(t) {
+  try {
+    await api.post(`/admin/threads/${t.id}/approve`)
+    toast.success('已通过')
+    await load(page.value)
+  } catch (e) { toast.error(e.message) }
+}
+
+async function reject(t) {
+  const reason = prompt('驳回原因（可空）')
+  if (reason === null) return
+  try {
+    await api.post(`/admin/threads/${t.id}/reject`, { reason: reason || null })
+    toast.success('已驳回')
+    await load(page.value)
+  } catch (e) { toast.error(e.message) }
+}
+
+async function moveThread(t) {
+  if (!forums.value.length) await loadForums()
+  const options = forums.value.map(f => `${f.id}=${f.name}`).join('\n')
+  const input = prompt(`移到哪个版块？输入版块 ID：\n${options}`, String(t.forumId || ''))
+  if (input === null) return
+  const forumId = Number(input)
+  if (!forumId) { toast.error('无效版块'); return }
+  try {
+    await api.post(`/admin/threads/${t.id}/move`, { forumId })
+    toast.success('已移动')
+    await load(page.value)
+  } catch (e) { toast.error(e.message) }
+}
 
 function toggleAll() {
   selectedIds.value = allSelected.value ? [] : items.value.map(t => t.id)
@@ -180,6 +231,7 @@ async function batchAction(action) {
   } catch (e) { toast.error(e.message) }
 }
 
+loadForums()
 load(1)
 watch(page, (p) => { if (p > 0) load(p) })
 </script>

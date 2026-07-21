@@ -58,6 +58,7 @@ const navItems = [
   { to: '/admin/moderators', icon: '🛡️', label: '版主管理' },
   { to: '/admin/banners', icon: '🖼️', label: '首页广告' },
   { to: '/admin/recharge', icon: '💎', label: '会员申请' },
+  { to: '/admin/shop', icon: '🛒', label: '商城商品' },
   { to: '/admin/tags', icon: '🏷️', label: '标签管理' },
   { to: '/admin/posts', icon: '💬', label: '回复管理' },
   { to: '/admin/ledger', icon: '📊', label: '流水查询' },

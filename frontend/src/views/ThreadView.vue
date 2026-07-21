@@ -79,6 +79,10 @@
         <button class="btn-outline-modern" @click="modAction(thread.repliesLocked ? 'unlock-replies' : 'lock-replies')">
           {{ thread.repliesLocked ? '解除禁回' : '禁止回复' }}
         </button>
+        <button class="btn-outline-modern" @click="modAction(thread.isEssence ? 'unessence' : 'essence')">
+          {{ thread.isEssence ? '取消精品' : '设为精品' }}
+        </button>
+        <button class="btn-outline-modern" @click="modMove">移动版块</button>
         <button class="btn-outline-modern danger" @click="modAction('hide')">隐藏本帖</button>
       </div>
 
@@ -136,10 +140,18 @@
         </div>
       </div>
 
-      <div v-for="post in posts" :key="post.id" class="post-card" :class="{ 'post-deleted': post.deleted }">
+      <div
+        v-for="post in posts"
+        :key="post.id"
+        :id="`floor-${post.floor}`"
+        class="post-card"
+        :class="{ 'post-deleted': post.deleted }"
+      >
         <div class="post-side">
           <router-link :to="`/user/${post.author.id}`">
-            <img :src="post.author.avatar || defaultAvatar(post.author.nickname)" class="post-avatar" />
+            <span class="avatar-frame" :class="'frame-' + (post.author.avatarFrame || '')">
+              <img :src="post.author.avatar || defaultAvatar(post.author.nickname)" class="post-avatar" />
+            </span>
           </router-link>
           <div class="fw-bold mb-1" style="font-size: 13px">
             <router-link :to="`/user/${post.author.id}`">{{ post.author.nickname }}</router-link>
@@ -167,6 +179,7 @@
               >编辑</button>
               <button v-if="auth.user?.id === post.author.id && !post.deleted && post.floor > 1" class="post-action-btn" @click="deletePost(post)">删除</button>
               <button v-if="auth.isLoggedIn && !post.deleted" class="post-action-btn" @click="quotePost(post)">引用</button>
+              <button v-if="auth.isLoggedIn && !post.deleted" class="post-action-btn" @click="reportPost(post)">举报</button>
             </span>
           </div>
 
@@ -206,7 +219,9 @@
             </div>
             <div v-else>
               <div v-if="post.replyToFloor" class="quote-box mb-2">
-                引用 #{{ post.replyToFloor }} {{ post.replyToNickname }}：{{ post.replyToContent }}
+                引用
+                <a href="#" @click.prevent="scrollToFloor(post.replyToFloor)">#{{ post.replyToFloor }}</a>
+                {{ post.replyToNickname }}：{{ post.replyToContent }}
               </div>
               <MarkdownBody :content="post.content" />
             </div>
@@ -463,7 +478,7 @@ async function modAction(action) {
   const labels = {
     pin: '置顶', unpin: '取消置顶',
     'lock-replies': '禁止回复', 'unlock-replies': '解除禁回',
-    hide: '隐藏',
+    hide: '隐藏', essence: '设为精品', unessence: '取消精品',
   }
   const reason = prompt(`${labels[action] || action}原因（可空）`)
   if (reason === null) return
@@ -478,6 +493,30 @@ async function modAction(action) {
     await load()
   } catch (e) {
     toast.error(e.response?.data?.message || e.message || '操作失败')
+  } finally {
+    modBusy.value = false
+  }
+}
+
+async function modMove() {
+  if (modBusy.value) return
+  try {
+    const { data } = await api.get('/categories')
+    const list = []
+    for (const c of data || []) {
+      for (const f of c.forums || []) list.push({ id: f.id, name: `${c.name}/${f.name}` })
+    }
+    const tip = list.map(f => `${f.id} ${f.name}`).join('\n')
+    const input = prompt(`输入目标版块 ID：\n${tip}`, String(thread.value.forumId))
+    if (input === null) return
+    const forumId = Number(input)
+    if (!forumId) { toast.error('无效版块'); return }
+    modBusy.value = true
+    await api.post(`/threads/${route.params.id}/mod/move`, { forumId })
+    toast.success('已移动')
+    await load()
+  } catch (e) {
+    toast.error(e.response?.data?.message || e.message || '移动失败')
   } finally {
     modBusy.value = false
   }
@@ -501,7 +540,9 @@ async function deletePost(post) {
   if (!confirm('确定删除此回复？')) return
   try {
     await api.delete(`/posts/${post.id}`)
-    posts.value = posts.value.filter((p) => p.id !== post.id)
+    post.deleted = true
+    post.content = ''
+    post.images = []
     thread.value.replyCount = Math.max(0, thread.value.replyCount - 1)
   } catch (e) {
     error.value = e.message
@@ -511,6 +552,22 @@ async function deletePost(post) {
 function quotePost(post) {
   replyTo.value = post
   replyTextarea.value?.focus()
+}
+
+function scrollToFloor(floor) {
+  const el = document.getElementById(`floor-${floor}`)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function reportPost(post) {
+  const reason = prompt('请填写举报原因')
+  if (!reason || reason.trim().length < 2) return
+  try {
+    await api.post('/reports', { targetType: 'post', targetId: post.id, reason: reason.trim() })
+    toast.success('举报已提交')
+  } catch (e) {
+    toast.error(e.message)
+  }
 }
 
 function pollPct(opt) {
@@ -573,6 +630,7 @@ async function submitReply() {
       replyToPostId: replyTo.value?.id || null,
     })
     posts.value.push(data)
+    postTotal.value += 1
     thread.value.replyCount += 1
     reply.value = ''
     replyImages.value = []
@@ -654,7 +712,13 @@ function shareThread() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const floor = Number(route.query.floor) || Number(String(route.hash || '').replace(/^#floor-/, ''))
+  if (floor > 0) {
+    setTimeout(() => scrollToFloor(floor), 80)
+  }
+})
 watch(() => route.params.id, load)
 </script>
 

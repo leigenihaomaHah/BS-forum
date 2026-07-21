@@ -4,7 +4,9 @@
       <div class="util-bar">
         <div>发现社区 · 分享观点 · 一起成长</div>
         <div v-if="auth.isLoggedIn" class="user-assets">
-            <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
+            <span class="avatar-frame" :class="'frame-' + (auth.user.avatarFrame || '')">
+              <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
+            </span>
             <router-link :to="`/user/${auth.user.id}`">{{ auth.user.nickname }}</router-link>
             <router-link to="/me" class="settings-link" title="个人中心">我的</router-link>
             <router-link to="/settings" class="settings-link" title="设置">⚙</router-link>
@@ -22,6 +24,10 @@
             </div>
           </span>
           <router-link v-if="isAdmin" to="/admin" class="admin-link">管理后台</router-link>
+          <router-link to="/messages" class="pm-link" title="私信">
+            私信
+            <span v-if="pmUnread > 0" class="notif-badge pm-badge">{{ pmUnread > 99 ? '99+' : pmUnread }}</span>
+          </router-link>
           <div class="notif-wrapper">
             <a href="#" @click.prevent="toggleNotif" class="notif-bell" title="通知">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -56,7 +62,7 @@
                     >{{ n.fromNickname }}</router-link>
                     <router-link
                       v-else-if="n.threadId"
-                      :to="`/thread/${n.threadId}`"
+                      :to="threadLink(n)"
                       @click.stop
                     >{{ n.threadTitle || '查看' }}</router-link>
                     <span v-else>{{ n.content }}</span>
@@ -166,13 +172,25 @@ const showNotif = ref(false)
 const notifications = ref([])
 const notifLoading = ref(false)
 const unreadCount = ref(0)
+const pmUnread = ref(0)
 let notifTimer = null
 
-	async function refreshUnread() {
+function threadLink(n) {
+  if (!n?.threadId) return '/'
+  if (n.floor) return `/thread/${n.threadId}?floor=${n.floor}`
+  if (n.postId) return `/thread/${n.threadId}`
+  return `/thread/${n.threadId}`
+}
+
+async function refreshUnread() {
   if (!auth.isLoggedIn) return
   try {
-    const { data } = await api.get('/me/notifications/summary')
-    unreadCount.value = data.totalUnread
+    const [sumRes, pmRes] = await Promise.all([
+      api.get('/me/notifications/summary'),
+      api.get('/messages/unread-count'),
+    ])
+    unreadCount.value = sumRes.data.totalUnread
+    pmUnread.value = pmRes.data?.count || 0
   } catch { console.warn('refreshUnread failed') }
 }
 
@@ -262,10 +280,24 @@ function doSearch() {
 .header-avatar {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: 50%;
   vertical-align: middle;
   object-fit: cover;
+  display: block;
 }
+.pm-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: #7a869c !important;
+  text-decoration: none !important;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 8px;
+  margin-right: 2px;
+}
+.pm-link:hover { color: #142033 !important; }
+.pm-badge { position: absolute; top: -6px; right: -4px; }
 .settings-link {
   text-decoration: none !important;
   font-size: 20px;

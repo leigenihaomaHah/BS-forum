@@ -29,32 +29,13 @@
             </div>
           </template>
 
-          <!-- Reset password form -->
+          <!-- Reset password：弱校验已关闭，引导联系管理员 -->
           <template v-else>
             <h4 class="mb-1">重置密码</h4>
-            <p class="text-muted mb-3" style="font-size: 13px">通过用户名和昵称验证身份</p>
-
-            <div class="mb-2">
-              <label class="form-label">用户名</label>
-              <input v-model="resetUsername" class="form-control" @keyup.enter="doReset" />
-            </div>
-            <div class="mb-2">
-              <label class="form-label">昵称</label>
-              <input v-model="resetNickname" class="form-control" @keyup.enter="doReset" />
-            </div>
-            <div class="mb-3">
-              <label class="form-label">新密码</label>
-              <input v-model="resetPassword" type="password" class="form-control" @keyup.enter="doReset" />
-            </div>
-
-            <div v-if="resetError" class="text-danger mb-2" style="font-size:13px">{{ resetError }}</div>
-            <div v-if="resetOk" class="text-success mb-2" style="font-size:13px">{{ resetOk }}</div>
-            <button class="btn btn-forum w-100" :disabled="resetting || !!resetOk" @click="doReset">
-              {{ resetting ? '处理中...' : '重置密码' }}
-            </button>
-            <div class="mt-3 text-muted" style="font-size: 12px">
-              <a href="#" @click.prevent="cancelReset">返回登录</a>
-            </div>
+            <p class="text-muted mb-3" style="font-size: 13px">
+              出于安全考虑，已关闭「用户名+昵称」自助找回。请联系站长在管理后台为你重置密码。
+            </p>
+            <button class="btn btn-outline-modern w-100" @click="cancelReset">返回登录</button>
           </template>
         </div>
       </div>
@@ -64,7 +45,6 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import api from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 
@@ -76,14 +56,7 @@ const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
-
 const showReset = ref(false)
-const resetUsername = ref('')
-const resetNickname = ref('')
-const resetPassword = ref('')
-const resetError = ref('')
-const resetOk = ref('')
-const resetting = ref(false)
 
 function close() {
   authModal.close()
@@ -95,11 +68,6 @@ watch(open, (v) => {
     password.value = ''
     error.value = ''
     showReset.value = false
-    resetUsername.value = ''
-    resetNickname.value = ''
-    resetPassword.value = ''
-    resetError.value = ''
-    resetOk.value = ''
     document.body.style.overflow = 'hidden'
   } else if (authModal.mode == null) {
     document.body.style.overflow = ''
@@ -121,30 +89,5 @@ async function submit() {
 
 function cancelReset() {
   showReset.value = false
-  resetError.value = ''
-  resetOk.value = ''
-}
-
-async function doReset() {
-  resetError.value = ''
-  resetOk.value = ''
-  if (!resetUsername.value.trim()) { resetError.value = '请输入用户名'; return }
-  if (!resetNickname.value.trim()) { resetError.value = '请输入昵称'; return }
-  if (!resetPassword.value) { resetError.value = '请输入新密码'; return }
-  resetting.value = true
-  try {
-    const { data } = await api.post('/auth/reset-password', {
-      username: resetUsername.value,
-      nickname: resetNickname.value,
-      newPassword: resetPassword.value,
-    })
-    resetOk.value = data.message || '密码已重置'
-    username.value = resetUsername.value
-    password.value = ''
-  } catch (e) {
-    resetError.value = e.response?.data?.message || e.message || '重置失败'
-  } finally {
-    resetting.value = false
-  }
 }
 </script>

@@ -96,6 +96,7 @@ builder.Services.AddCors(opt =>
 });
 
 builder.Services.AddSingleton<CaptchaService>();
+builder.Services.AddSingleton<RateLimitService>();
 builder.Services.AddScoped<JwtHelper>();
 builder.Services.AddScoped<LevelService>();
 builder.Services.AddScoped<RewardService>();
@@ -111,6 +112,8 @@ builder.Services.AddScoped<CommunityService>();
 builder.Services.AddScoped<RetentionService>();
 builder.Services.AddScoped<RechargeService>();
 builder.Services.AddScoped<ImageMigrationService>();
+builder.Services.AddScoped<SiteSettingsService>();
+builder.Services.AddScoped<MessageService>();
 
 var app = builder.Build();
 
@@ -135,6 +138,8 @@ using (var scope = app.Services.CreateScope())
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
         await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=5000;");
         await DbSeeder.SeedAsync(db);
+        var settings = scope.ServiceProvider.GetRequiredService<SiteSettingsService>();
+        await settings.EnsureDefaultsAsync();
     }
     catch (Exception ex)
     {

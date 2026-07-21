@@ -56,6 +56,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   position: relative;
   display: inline-block;
   vertical-align: middle;
+  z-index: 2;
+}
+.icon-picker:has(.icon-picker-panel) {
+  z-index: 40;
 }
 .icon-picker-trigger {
   display: inline-flex;
@@ -74,7 +78,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .icon-picker-caret { font-size: 10px; color: #98a2b3; }
 .icon-picker-panel {
   position: absolute;
-  z-index: 40;
+  z-index: 50;
   top: calc(100% + 4px);
   left: 0;
   width: 280px;

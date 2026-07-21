@@ -111,7 +111,10 @@ async function open(n) {
     await loadSummary()
   }
   if (n.type === 'follow' && n.fromUserId) router.push(`/user/${n.fromUserId}`)
-  else if (n.threadId) router.push(`/thread/${n.threadId}`)
+  else if (n.threadId) {
+    const q = n.floor ? { floor: String(n.floor) } : {}
+    router.push({ path: `/thread/${n.threadId}`, query: q, hash: n.floor ? `#floor-${n.floor}` : undefined })
+  }
 }
 
 onMounted(async () => {

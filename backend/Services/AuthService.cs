@@ -22,18 +22,27 @@ public class AuthService
     private readonly LevelService _levels;
     private readonly CommunityService _community;
     private readonly CaptchaService _captcha;
+    private readonly SiteSettingsService _settings;
+    private readonly RateLimitService _rate;
 
-    public AuthService(AppDbContext db, JwtHelper jwt, LevelService levels, CommunityService community, CaptchaService captcha)
+    public AuthService(
+        AppDbContext db, JwtHelper jwt, LevelService levels, CommunityService community,
+        CaptchaService captcha, SiteSettingsService settings, RateLimitService rate)
     {
         _db = db;
         _jwt = jwt;
         _levels = levels;
         _community = community;
         _captcha = captcha;
+        _settings = settings;
+        _rate = rate;
     }
 
     public async Task<(AuthResponse? Result, string? Error)> RegisterAsync(RegisterRequest req)
     {
+        if (!await _settings.GetBoolAsync("allow_register", true))
+            return (null, "当前暂停注册");
+
         var username = (req.Username ?? "").Trim();
         if (username.Length < 3 || username.Length > 20)
             return (null, "用户名长度需为 3-20 个字符");
@@ -55,8 +64,8 @@ public class AuthService
             Username = username,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Nickname = string.IsNullOrWhiteSpace(req.Nickname) ? username : req.Nickname.Trim(),
-            Points = 0,
-            Coins = 10,
+            Points = await _settings.GetIntAsync("default_points", 0),
+            Coins = await _settings.GetIntAsync("default_coins", 10),
             Level = 1,
             InviteCode = ""
         };
@@ -72,7 +81,18 @@ public class AuthService
 
     public async Task<(AuthResponse? Result, string? Error)> LoginAsync(LoginRequest req)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username.Trim());
+        var username = (req.Username ?? "").Trim();
+        var key = $"login:{username.ToLower()}";
+        if (!_rate.TryAcquire(key, 15, TimeSpan.FromMinutes(15)))
+            return (null, "登录尝试过多，请稍后再试");
+
+        if (!string.IsNullOrWhiteSpace(req.CaptchaId) || !string.IsNullOrWhiteSpace(req.CaptchaCode))
+        {
+            if (!_captcha.Validate(req.CaptchaId, req.CaptchaCode))
+                return (null, "验证码错误或已过期，请刷新后重试");
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
         if (user == null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return (null, "用户名或密码错误");
 
@@ -80,26 +100,8 @@ public class AuthService
         return (new AuthResponse(token, await ToUserDtoAsync(user)), null);
     }
 
-    public async Task<(bool Success, string? Error)> ResetPasswordAsync(ResetPasswordRequest req)
-    {
-        var username = (req.Username ?? "").Trim();
-        var nickname = (req.Nickname ?? "").Trim();
-        if (username.Length < 3) return (false, "请输入用户名");
-        if (nickname.Length < 1) return (false, "请输入昵称");
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
-        if (user == null) return (false, "用户名或昵称不匹配");
-
-        if (!string.Equals(user.Nickname, nickname, StringComparison.OrdinalIgnoreCase))
-            return (false, "用户名或昵称不匹配");
-
-        var pwdError = PasswordRules.Validate(req.NewPassword);
-        if (pwdError != null) return (false, pwdError);
-
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
-        await _db.SaveChangesAsync();
-        return (true, null);
-    }
+    public Task<(bool Success, string? Error)> ResetPasswordAsync(ResetPasswordRequest req)
+        => Task.FromResult<(bool, string?)>((false, "出于安全考虑，已关闭昵称找回密码。请联系管理员在后台重置密码。"));
 
     public async Task<UserDto?> GetMeAsync(int userId)
     {
@@ -117,6 +119,16 @@ public class AuthService
             var nick = req.Nickname.Trim();
             if (nick.Length is < 1 or > 20)
                 return (null, "昵称长度需为 1-20 个字符");
+            if (!string.Equals(nick, user.Nickname, StringComparison.Ordinal))
+            {
+                var card = await _db.UserInventories
+                    .FirstOrDefaultAsync(i => i.UserId == userId && i.ItemType == "rename_card" && i.Quantity > 0);
+                if (card == null)
+                    return (null, "修改昵称需要改名卡，请先在商城兑换");
+                card.Quantity -= 1;
+                if (card.Quantity <= 0)
+                    _db.UserInventories.Remove(card);
+            }
             user.Nickname = nick;
         }
 
@@ -133,6 +145,21 @@ public class AuthService
             if (req.Avatar.Length > 800_000)
                 return (null, "头像过大，请压缩后重试");
             user.Avatar = string.IsNullOrWhiteSpace(req.Avatar) ? null : req.Avatar;
+        }
+
+        if (req.ShowPurchases.HasValue) user.ShowPurchases = req.ShowPurchases.Value;
+        if (req.ShowFavorites.HasValue) user.ShowFavorites = req.ShowFavorites.Value;
+        if (req.NotifyReply.HasValue) user.NotifyReply = req.NotifyReply.Value;
+        if (req.NotifyMention.HasValue) user.NotifyMention = req.NotifyMention.Value;
+        if (req.Email != null)
+        {
+            var email = req.Email.Trim();
+            if (email.Length == 0)
+                user.Email = null;
+            else if (email.Length > 80 || !email.Contains('@') || email.Contains(' '))
+                return (null, "邮箱格式无效");
+            else
+                user.Email = email;
         }
 
         await _db.SaveChangesAsync();
@@ -267,7 +294,9 @@ public class AuthService
             muted, muted ? user.MutedUntil : null,
             user.InviteCode, user.IsEffectivelyVip(), user.VipUntil,
             VipAccess.EffectiveTier(user), VipAccess.TierLabel(VipAccess.EffectiveTier(user)),
-            user.LotteryTickets, user.AvatarFrame);
+            user.LotteryTickets, user.AvatarFrame,
+            user.ShowPurchases, user.ShowFavorites, user.Email,
+            user.NotifyReply, user.NotifyMention);
     }
 
     public async Task<UserProfileDto?> GetProfileAsync(int userId, int? viewerId = null)

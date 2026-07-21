@@ -32,13 +32,13 @@ public class ForumQueryService
         var forumIds = categories.SelectMany(c => c.Forums).Select(f => f.Id).ToList();
 
         var todayCounts = await _db.Threads
-            .Where(t => forumIds.Contains(t.ForumId) && t.CreatedAt >= today && !t.IsHidden)
+            .Where(t => forumIds.Contains(t.ForumId) && t.CreatedAt >= today && !t.IsHidden && !t.PendingReview)
             .GroupBy(t => t.ForumId)
             .Select(g => new { ForumId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ForumId, x => x.Count);
 
         var latestIds = await _db.Threads
-            .Where(t => forumIds.Contains(t.ForumId) && !t.IsHidden)
+            .Where(t => forumIds.Contains(t.ForumId) && !t.IsHidden && !t.PendingReview)
             .GroupBy(t => t.ForumId)
             .Select(g => g.OrderByDescending(t => t.LastReplyAt).Select(t => t.Id).FirstOrDefault())
             .ToListAsync();
@@ -85,9 +85,9 @@ public class ForumQueryService
             return (null, VipAccess.AccessDeniedMessage(f.MinVipTier));
 
         var today = DateTime.UtcNow.Date;
-        var todayCount = await _db.Threads.CountAsync(t => t.ForumId == forumId && t.CreatedAt >= today && !t.IsHidden);
+        var todayCount = await _db.Threads.CountAsync(t => t.ForumId == forumId && t.CreatedAt >= today && !t.IsHidden && !t.PendingReview);
         var lt = await _db.Threads.Include(t => t.Author)
-            .Where(t => t.ForumId == forumId && !t.IsHidden)
+            .Where(t => t.ForumId == forumId && !t.IsHidden && !t.PendingReview)
             .OrderByDescending(t => t.LastReplyAt)
             .FirstOrDefaultAsync();
         LatestThreadDto? latest = null;

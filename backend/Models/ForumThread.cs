@@ -13,6 +13,8 @@ public class ForumThread
     public int ReplyCount { get; set; }
     public int LikeCount { get; set; }
     public bool IsHidden { get; set; }
+    /// <summary>发帖审核：待审帖对普通用户不可见。</summary>
+    public bool PendingReview { get; set; }
     public bool RepliesLocked { get; set; }
     public bool IsPinned { get; set; }
     public bool IsEssence { get; set; }

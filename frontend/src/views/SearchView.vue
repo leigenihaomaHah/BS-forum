@@ -4,10 +4,34 @@
       <router-link to="/">首页</router-link> &gt; 搜索
     </div>
 
+    <div class="panel mb-3">
+      <div class="panel-header"><span class="accent"></span>搜索</div>
+      <div class="p-3 search-bar-row">
+        <input
+          v-model="query"
+          class="form-control"
+          placeholder="输入关键词…"
+          @keyup.enter="load(1)"
+        />
+        <select v-model="forumId" class="form-control" style="max-width:180px">
+          <option value="">全部版块</option>
+          <option v-for="f in forums" :key="f.id" :value="String(f.id)">{{ f.name }}</option>
+        </select>
+        <select v-model="type" class="form-control" style="max-width:120px">
+          <option value="">全部类型</option>
+          <option value="public">公开</option>
+          <option value="coin">金币</option>
+          <option value="poll">投票</option>
+        </select>
+        <button class="btn btn-forum" @click="load(1)">搜索</button>
+      </div>
+    </div>
+
     <div class="panel">
-      <div class="panel-header"><span class="accent"></span>搜索结果：{{ query }}</div>
+      <div class="panel-header"><span class="accent"></span>搜索结果：{{ query || '（请输入关键词）' }}</div>
 
       <div v-if="loading" class="p-3 text-muted">搜索中...</div>
+      <div v-else-if="!query" class="p-3 text-muted">输入关键词开始搜索</div>
       <div v-else-if="!items.length" class="p-3 text-muted">
         没有找到与「{{ query }}」相关的内容
       </div>
@@ -15,8 +39,8 @@
         <div v-for="t in items" :key="t.id" class="search-item">
           <div class="search-title">
             <router-link :to="`/thread/${t.id}`" v-html="highlight(t.title)"></router-link>
-            <span v-if="t.type === 'private'" class="type-badge type-private">私密</span>
             <span v-if="t.type === 'coin'" class="type-badge type-coin">金币</span>
+            <span v-if="t.type === 'poll'" class="type-badge">投票</span>
           </div>
           <div class="search-snippet" v-html="highlight(t.snippet)"></div>
           <div class="search-meta">
@@ -39,22 +63,26 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import PaginationComp from '../components/PaginationComp.vue'
 
 const route = useRoute()
+const router = useRouter()
 const items = ref([])
+const forums = ref([])
 const total = ref(0)
 const page = ref(1)
-const loading = ref(true)
+const loading = ref(false)
 const pageSize = 20
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const query = ref('')
+const query = ref(route.query.q?.toString() || '')
+const forumId = ref(route.query.forumId?.toString() || '')
+const type = ref(route.query.type?.toString() || '')
 
 function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function highlight(text) {
@@ -72,11 +100,43 @@ function fmt(iso) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
+async function loadForums() {
+  try {
+    const { data } = await api.get('/categories')
+    const list = []
+    for (const c of data || []) {
+      for (const f of c.forums || []) list.push({ id: f.id, name: f.name })
+    }
+    forums.value = list
+  } catch { forums.value = [] }
+}
+
 async function load(p) {
   page.value = p || 1
+  if (!query.value.trim()) {
+    items.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
+  router.replace({
+    query: {
+      q: query.value,
+      forumId: forumId.value || undefined,
+      type: type.value || undefined,
+      page: page.value > 1 ? String(page.value) : undefined,
+    },
+  })
   try {
-    const { data } = await api.get('/search', { params: { q: query.value, page: page.value, pageSize } })
+    const { data } = await api.get('/search', {
+      params: {
+        q: query.value,
+        page: page.value,
+        pageSize,
+        forumId: forumId.value || undefined,
+        type: type.value || undefined,
+      },
+    })
     items.value = data.items
     total.value = data.total
   } catch {
@@ -87,50 +147,32 @@ async function load(p) {
   }
 }
 
-watch(() => route.query.q, (q) => {
-  if (q) {
-    query.value = q
-    load(1)
-  }
-}, { immediate: true })
-watch(page, (p) => { if (p > 0) load(p) })
+watch(page, (p) => { if (p > 0 && query.value) load(p) })
+
+onMounted(async () => {
+  await loadForums()
+  if (query.value) await load(Number(route.query.page) || 1)
+})
 </script>
 
 <style scoped>
+.search-bar-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .search-item {
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--line, rgba(20,32,51,0.08));
-  transition: background 0.15s;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line, #f1f5f9);
 }
-.search-item:last-child { border-bottom: none; }
-.search-item:hover { background: #f8fafc; }
-.search-title { font-size: 15px; font-weight: 600; }
-.search-title a { color: var(--ink, #142033); text-decoration: none; }
-.search-title a:hover { color: var(--accent, #0d9488); }
-.search-snippet {
-  font-size: 13px;
-  color: #3d4a63;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+.search-title { font-weight: 600; margin-bottom: 4px; }
+.search-snippet { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+.search-meta { font-size: 12px; color: #94a3b8; }
+.sep { margin: 0 4px; }
+:deep(mark.hl) {
+  background: rgba(13, 148, 136, 0.2);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
 }
-.search-meta {
-  font-size: 12px;
-  color: #7a869c;
-  margin-top: 6px;
-}
-.sep { margin: 0 6px; color: #d0d5dd; }
-.type-badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin-left: 6px;
-  vertical-align: middle;
-  font-weight: 600;
-}
-.type-private { background: #f3e8ff; color: #7c3aed; }
-.type-coin { background: #fef3c7; color: #b45309; }
-:deep(.hl) { background: #fef08a; color: #854d0e; padding: 0 2px; border-radius: 2px; }
 </style>

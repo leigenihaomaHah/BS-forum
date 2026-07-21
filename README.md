@@ -18,8 +18,8 @@ cd backend
 dotnet run
 ```
 
-API 默认：`http://localhost:5000`  
-Swagger：`http://localhost:5000/swagger`
+API 默认：`http://127.0.0.1:4080`  
+Swagger：`http://127.0.0.1:4080/swagger`
 
 首次启动会自动建库并写入种子数据。
 
@@ -31,7 +31,7 @@ npm install
 npm run dev
 ```
 
-访问：`http://localhost:5173`（已代理 `/api` 到后端）
+访问：`http://127.0.0.1:4173`（已代理 `/api` 到后端 `4080`）
 
 ## 演示账号
 

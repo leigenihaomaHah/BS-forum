@@ -21,8 +21,11 @@ public class ThreadService
     private readonly NotificationService _notifications;
     private readonly CommunityService _community;
     private readonly RetentionService _retention;
+    private readonly SiteSettingsService _settings;
 
-    public ThreadService(AppDbContext db, LevelService levels, RewardService rewards, NotificationService notifications, CommunityService community, RetentionService retention)
+    public ThreadService(
+        AppDbContext db, LevelService levels, RewardService rewards, NotificationService notifications,
+        CommunityService community, RetentionService retention, SiteSettingsService settings)
     {
         _db = db;
         _levels = levels;
@@ -30,15 +33,23 @@ public class ThreadService
         _notifications = notifications;
         _community = community;
         _retention = retention;
+        _settings = settings;
     }
 
-    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(int forumId, int page, int pageSize, string sort = "latest")
+    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(int forumId, int page, int pageSize, string sort = "latest", int? viewerId = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
         var query = _db.Threads.Include(t => t.Author)
-            .Where(t => t.ForumId == forumId && !t.IsHidden);
+            .Where(t => t.ForumId == forumId && !t.IsHidden && !t.PendingReview);
+
+        if (viewerId.HasValue)
+        {
+            var blocked = await _community.GetBlockedUserIdsAsync(viewerId.Value);
+            if (blocked.Count > 0)
+                query = query.Where(t => !blocked.Contains(t.AuthorId));
+        }
 
         if (sort == "essence")
             query = query.Where(t => t.IsEssence);
@@ -82,6 +93,14 @@ public class ThreadService
         User? viewer = null;
         if (currentUserId.HasValue)
             viewer = await _db.Users.FindAsync(currentUserId.Value);
+
+        if (thread.PendingReview)
+        {
+            var canSeePending = viewer != null && (viewer.IsAdmin || thread.AuthorId == viewer.Id);
+            if (!canSeePending)
+                return (null, "帖子审核中");
+        }
+
         if (!VipAccess.CanAccessForum(viewer, thread.Forum.MinVipTier))
             return (null, VipAccess.AccessDeniedMessage(thread.Forum.MinVipTier));
 
@@ -129,6 +148,11 @@ public class ThreadService
         User? viewer = null;
         if (currentUserId.HasValue)
             viewer = await _db.Users.FindAsync(currentUserId.Value);
+        if (thread.PendingReview)
+        {
+            var canSee = viewer != null && (viewer.IsAdmin || thread.AuthorId == viewer.Id);
+            if (!canSee) return new PagedResult<PostDto>([], 0, page, pageSize);
+        }
         if (!VipAccess.CanAccessForum(viewer, thread.Forum.MinVipTier))
             return new PagedResult<PostDto>([], 0, page, pageSize);
 
@@ -170,8 +194,8 @@ public class ThreadService
         if (p.ReplyToPostId is int rid && byId != null && byId.TryGetValue(rid, out var parent))
         {
             rf = parent.Floor;
-            rn = parent.Author.Nickname;
-            rc = parent.Content.Length > 80 ? parent.Content[..80] + "…" : parent.Content;
+            rn = parent.Author?.Nickname ?? "";
+            rc = parent.IsDeleted ? "已删除" : (parent.Content.Length > 80 ? parent.Content[..80] + "…" : parent.Content);
         }
         else if (p.ReplyToPostId is int rid2)
         {
@@ -180,14 +204,23 @@ public class ThreadService
             {
                 rf = quoted.Floor;
                 rn = quoted.Author.Nickname;
-                rc = quoted.Content.Length > 80 ? quoted.Content[..80] + "…" : quoted.Content;
+                rc = quoted.IsDeleted ? "已删除" : (quoted.Content.Length > 80 ? quoted.Content[..80] + "…" : quoted.Content);
             }
+        }
+
+        if (p.IsDeleted)
+        {
+            return new PostDto(
+                p.Id, p.Floor, "已删除", p.CreatedAt, author,
+                [], Hidden: hideContent, p.ReplyToPostId, rf, rn, rc,
+                EditedAt: p.EditedAt, Deleted: true);
         }
 
         return new PostDto(
             p.Id, p.Floor, hideContent ? "" : p.Content, p.CreatedAt, author,
             hideContent ? [] : PostImageHelper.Deserialize(p.ImagesJson),
-            Hidden: hideContent, p.ReplyToPostId, rf, rn, rc);
+            Hidden: hideContent, p.ReplyToPostId, rf, rn, rc,
+            EditedAt: p.EditedAt, Deleted: false);
     }
 
     public async Task<(ThreadDetailDto? Result, string? Error)> CreateThreadAsync(int userId, CreateThreadRequest req)
@@ -240,7 +273,8 @@ public class ThreadService
                 Type = type,
                 CoinPrice = coinPrice,
                 CreatedAt = now,
-                LastReplyAt = now
+                LastReplyAt = now,
+                PendingReview = await _settings.GetBoolAsync("require_review") && !user.IsAdmin
             };
             _db.Threads.Add(thread);
             await _db.SaveChangesAsync();
@@ -259,7 +293,9 @@ public class ThreadService
             forum.ThreadCount += 1;
             forum.PostCount += 1;
 
-            await _rewards.TryAwardPointsAsync(user, 10, RewardService.ReasonCreateThread, "thread", thread.Id, dailyLimit: 5);
+            var threadPts = await _settings.GetIntAsync("points_per_thread", 10);
+            if (threadPts > 0)
+                await _rewards.TryAwardPointsAsync(user, threadPts, RewardService.ReasonCreateThread, "thread", thread.Id, dailyLimit: 5);
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -303,12 +339,24 @@ public class ThreadService
         var thread = await _db.Threads.Include(t => t.Forum).FirstOrDefaultAsync(t => t.Id == threadId);
         if (thread == null) return (null, "帖子不存在");
         if (thread.IsHidden) return (null, "帖子不存在");
+        if (thread.PendingReview && !user.IsAdmin && thread.AuthorId != userId)
+            return (null, "帖子审核中，暂不可回复");
         if (thread.RepliesLocked) return (null, "本帖已禁止回复");
         if (!VipAccess.CanAccessForum(user, thread.Forum.MinVipTier))
             return (null, VipAccess.AccessDeniedMessage(thread.Forum.MinVipTier));
 
         var accessError = await EnsureCanInteractAsync(thread, userId);
         if (accessError != null) return (null, accessError);
+
+        var maxReplies = await _settings.GetIntAsync("max_replies_per_day", 50);
+        if (!user.IsAdmin && maxReplies > 0)
+        {
+            var todayStart = DateTime.UtcNow.Date;
+            var todayReplies = await _db.Posts.CountAsync(p =>
+                p.AuthorId == userId && p.Floor > 1 && p.CreatedAt >= todayStart && !p.IsDeleted);
+            if (todayReplies >= maxReplies)
+                return (null, $"今日回帖已达上限（{maxReplies}）");
+        }
 
         if (!user.IsAdmin)
         {
@@ -352,26 +400,28 @@ public class ThreadService
             thread.LastReplyAt = DateTime.UtcNow;
             thread.Forum.PostCount += 1;
 
-            // 阶梯奖励：当日回帖次数越多，单次收益递减，防刷币同时保持活跃动力
+            // 阶梯奖励：当日回帖次数越多，单次收益递减；基数来自站点设置
             var todayReplyCount = await _db.PointLedgers
                 .CountAsync(p => p.UserId == user.Id && p.Reason == RewardService.ReasonReply && p.CreatedAt >= DateTime.UtcNow.Date);
 
+            var basePts = await _settings.GetIntAsync("points_per_reply", 2);
+            var baseCns = await _settings.GetIntAsync("coins_per_reply", 1);
             var pts = 0;
             var cns = 0;
 
-            if (todayReplyCount < 10)      // 第 1-10 次：满额
+            if (todayReplyCount < 10)
             {
-                pts = 2;
-                cns = 2;
+                pts = basePts;
+                cns = Math.Max(baseCns, 1);
             }
-            else if (todayReplyCount < 20) // 第 11-20 次：金币减半
+            else if (todayReplyCount < 20)
             {
-                pts = 2;
-                cns = 1;
+                pts = basePts;
+                cns = Math.Max(baseCns / 2, 0);
             }
-            else if (todayReplyCount < 30) // 第 21-30 次：仅象征积分
+            else if (todayReplyCount < 30)
             {
-                pts = 1;
+                pts = Math.Max(basePts / 2, 1);
             }
 
             if (pts > 0)
@@ -395,22 +445,24 @@ public class ThreadService
                 });
             }
 
+            await _db.SaveChangesAsync(); // ensure post.Id
+
             await _notifications.AddReplyNotificationAsync(
                 thread.AuthorId, user.Id, user.Nickname, thread.Id, thread.Title,
-                content.Length >= 1 ? content : "[图片]");
+                content.Length >= 1 ? content : "[图片]", post.Id, post.Floor);
 
             if (quote != null && quote.AuthorId != user.Id && quote.AuthorId != thread.AuthorId)
             {
                 await _notifications.AddReplyNotificationAsync(
                     quote.AuthorId, user.Id, user.Nickname, thread.Id, thread.Title,
-                    $"引用了你的 {quote.Floor} 楼");
+                    $"引用了你的 {quote.Floor} 楼", post.Id, post.Floor);
             }
 
             foreach (var name in CommunityService.ExtractMentions(content))
             {
                 var mentioned = await _db.Users.FirstOrDefaultAsync(u => u.Nickname == name || u.Username == name);
                 if (mentioned != null)
-                    await _notifications.AddMentionNotificationAsync(mentioned.Id, user.Id, user.Nickname, thread.Id, thread.Title);
+                    await _notifications.AddMentionNotificationAsync(mentioned.Id, user.Id, user.Nickname, thread.Id, thread.Title, post.Id, post.Floor);
             }
 
             await _db.SaveChangesAsync();
@@ -444,12 +496,10 @@ public class ThreadService
         post.Content = content.Length >= 1 ? content : "[图片]";
         if (req.Images != null)
             post.ImagesJson = PostImageHelper.Serialize(images);
+        post.EditedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var ln = await _levels.GetLevelNameAsync(post.Author.Level);
-        return (new PostDto(post.Id, post.Floor, post.Content, post.CreatedAt,
-            new AuthorBriefDto(post.Author.Id, post.Author.Nickname, post.Author.Level, ln, post.Author.Points),
-            PostImageHelper.Deserialize(post.ImagesJson)), null);
+        return (await MapPostDtoAsync(post, false), null);
     }
 
     public async Task<(ThreadDetailDto? Result, string? Error)> UpdateThreadAsync(int userId, int threadId, UpdateThreadRequest req, bool isAdmin)
@@ -498,10 +548,14 @@ public class ThreadService
         if (post == null) return (null, "回复不存在");
         if (post.AuthorId != userId && !isAdmin) return (null, "无权删除");
         if (post.Floor == 1) return (null, "主楼不能单独删除，请删除整帖");
+        if (post.IsDeleted) return ("已删除", null);
 
+        post.IsDeleted = true;
+        post.DeletedAt = DateTime.UtcNow;
+        post.Content = "";
+        post.ImagesJson = null;
         post.Thread.ReplyCount = Math.Max(0, post.Thread.ReplyCount - 1);
         post.Thread.Forum.PostCount = Math.Max(0, post.Thread.Forum.PostCount - 1);
-        _db.Posts.Remove(post);
         await _db.SaveChangesAsync();
         return ("已删除", null);
     }

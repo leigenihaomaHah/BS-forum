@@ -7,9 +7,9 @@ namespace ForumApi.Services;
 
 public class LotteryService
 {
-    public const int CostCoins = 5;
-    public const int DailyLimit = 10;
-    public const int PityThreshold = 10;
+    public const int DefaultCostCoins = 5;
+    public const int DefaultDailyLimit = 10;
+    public const int DefaultPityThreshold = 10;
 
     // 权重合计 100，便于看概率；含金币 + 积分
     private static readonly LotteryPrizeDto[] Prizes =
@@ -31,25 +31,39 @@ public class LotteryService
     private readonly AppDbContext _db;
     private readonly NotificationService _notifications;
     private readonly LevelService _levels;
+    private readonly SiteSettingsService _settings;
 
-    public LotteryService(AppDbContext db, NotificationService notifications, LevelService levels)
+    public LotteryService(AppDbContext db, NotificationService notifications, LevelService levels, SiteSettingsService settings)
     {
         _db = db;
         _notifications = notifications;
         _levels = levels;
+        _settings = settings;
     }
 
-    public LotteryConfigDto GetConfig() =>
-        new(CostCoins, DailyLimit, PityThreshold, Prizes.ToList());
+    private async Task<(int Cost, int DailyLimit, int Pity)> GetLimitsAsync()
+    {
+        var cost = await _settings.GetIntAsync("lottery_cost_coins", DefaultCostCoins);
+        var daily = await _settings.GetIntAsync("lottery_daily_limit", DefaultDailyLimit);
+        var pity = await _settings.GetIntAsync("lottery_pity", DefaultPityThreshold);
+        return (Math.Clamp(cost, 1, 100), Math.Clamp(daily, 1, 100), Math.Clamp(pity, 1, 100));
+    }
+
+    public async Task<LotteryConfigDto> GetConfigAsync()
+    {
+        var (cost, daily, pity) = await GetLimitsAsync();
+        return new(cost, daily, pity, Prizes.ToList());
+    }
 
     public async Task<LotteryStatusDto?> GetStatusAsync(int userId)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return null;
         CommunityService.ClearExpiredVip(user);
+        var (cost, dailyLimitBase, _) = await GetLimitsAsync();
 
         var (spinsToday, freeUsed) = await GetTodayStatsAsync(userId);
-        var dailyLimit = user.IsEffectivelyVip() ? DailyLimit + 5 : DailyLimit;
+        var dailyLimit = user.IsEffectivelyVip() ? dailyLimitBase + 5 : dailyLimitBase;
         return new LotteryStatusDto(
             user.Coins,
             user.Points,
@@ -57,7 +71,7 @@ public class LotteryService
             dailyLimit,
             !freeUsed,
             Math.Max(0, dailyLimit - spinsToday),
-            CostCoins,
+            cost,
             user.IsEffectivelyMuted(),
             user.LotteryTickets,
             user.IsEffectivelyVip(),
@@ -79,7 +93,8 @@ public class LotteryService
             user = await _db.Users.FirstAsync(u => u.Id == userId);
             CommunityService.ClearExpiredVip(user);
 
-            var dailyLimit = user.IsEffectivelyVip() ? DailyLimit + 5 : DailyLimit;
+            var (costCoins, dailyLimitBase, pity) = await GetLimitsAsync();
+            var dailyLimit = user.IsEffectivelyVip() ? dailyLimitBase + 5 : dailyLimitBase;
             var spinsToday = await _db.LotterySpins
                 .CountAsync(s => s.UserId == userId && s.CreatedAt >= todayStart && s.CreatedAt < todayEnd);
             if (spinsToday >= dailyLimit)
@@ -100,14 +115,14 @@ public class LotteryService
                 }
                 else
                 {
-                    cost = CostCoins;
-                    if (user.Coins < CostCoins)
-                        return (null, $"金币不足，需要 {CostCoins} 金币（或购买转盘券）");
+                    cost = costCoins;
+                    if (user.Coins < costCoins)
+                        return (null, $"金币不足，需要 {costCoins} 金币（或购买转盘券）");
                     user.Coins -= cost;
                 }
             }
 
-            var prize = await PickPrizeAsync(userId);
+            var prize = await PickPrizeAsync(userId, pity);
             if (prize.Coins > 0) user.Coins += prize.Coins;
             if (prize.Points > 0) user.Points += prize.Points;
 
@@ -208,16 +223,16 @@ public class LotteryService
         return (todaySpins.Count, todaySpins.Any(s => s.IsFree));
     }
 
-    private async Task<LotteryPrizeDto> PickPrizeAsync(int userId)
+    private async Task<LotteryPrizeDto> PickPrizeAsync(int userId, int pityThreshold)
     {
         var recent = await _db.LotterySpins
             .Where(s => s.UserId == userId)
             .OrderByDescending(s => s.Id)
-            .Take(PityThreshold)
+            .Take(pityThreshold)
             .Select(s => new { s.PrizeCoins, s.PrizePoints })
             .ToListAsync();
 
-        if (recent.Count >= PityThreshold && recent.All(r => r.PrizeCoins == 0 && r.PrizePoints == 0))
+        if (recent.Count >= pityThreshold && recent.All(r => r.PrizeCoins == 0 && r.PrizePoints == 0))
         {
             var guaranteed = Prizes.Where(p => p.Coins >= 5 || p.Points >= 10).ToArray();
             return guaranteed[Random.Shared.Next(guaranteed.Length)];

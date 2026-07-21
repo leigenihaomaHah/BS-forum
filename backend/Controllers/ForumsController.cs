@@ -44,7 +44,7 @@ public class ForumsController : ControllerBase
     {
         var (ok, error) = await _forums.EnsureForumAccessAsync(id, JwtHelper.GetUserId(User));
         if (!ok) return StatusCode(403, new ApiMessage(error!));
-        return Ok(await _threads.GetThreadsAsync(id, page, pageSize, sort));
+        return Ok(await _threads.GetThreadsAsync(id, page, pageSize, sort, JwtHelper.GetUserId(User)));
     }
 }
 

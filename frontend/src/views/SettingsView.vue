@@ -39,6 +39,12 @@
               <div class="mb-3">
                 <label class="form-label">昵称</label>
                 <input v-model="form.nickname" class="form-control" maxlength="20" />
+                <div class="text-muted" style="font-size: 12px; margin-top: 4px">修改昵称需消耗一张改名卡（商城购买）</div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">邮箱（可选）</label>
+                <input v-model="form.email" type="email" class="form-control" maxlength="80" placeholder="用于找回联系，暂不发送邮件" />
               </div>
 
               <div class="mb-3">
@@ -51,6 +57,29 @@
               <div v-if="saveSuccess" class="text-success mb-2" style="font-size: 13px">{{ saveSuccess }}</div>
 
               <button class="btn btn-forum" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存修改' }}</button>
+            </div>
+          </div>
+
+          <div class="panel mt-3">
+            <div class="panel-header"><span class="accent"></span>隐私与通知</div>
+            <div class="p-4">
+              <label class="check-row">
+                <input v-model="form.showPurchases" type="checkbox" />
+                公开我的购买记录
+              </label>
+              <label class="check-row">
+                <input v-model="form.showFavorites" type="checkbox" />
+                公开我的收藏
+              </label>
+              <label class="check-row">
+                <input v-model="form.notifyReply" type="checkbox" />
+                被回帖时站内通知
+              </label>
+              <label class="check-row">
+                <input v-model="form.notifyMention" type="checkbox" />
+                被 @ 时站内通知
+              </label>
+              <button class="btn btn-forum btn-sm mt-2" :disabled="saving" @click="save">保存偏好</button>
             </div>
           </div>
         </div>
@@ -92,6 +121,11 @@ const avatarPreview = ref('')
 const form = ref({
   nickname: '',
   password: '',
+  email: '',
+  showPurchases: false,
+  showFavorites: false,
+  notifyReply: true,
+  notifyMention: true,
 })
 
 const blockedUsers = ref([])
@@ -117,6 +151,11 @@ async function unblock(id) {
 onMounted(() => {
   if (auth.user) {
     form.value.nickname = auth.user.nickname
+    form.value.email = auth.user.email || ''
+    form.value.showPurchases = !!auth.user.showPurchases
+    form.value.showFavorites = !!auth.user.showFavorites
+    form.value.notifyReply = auth.user.notifyReply !== false
+    form.value.notifyMention = auth.user.notifyMention !== false
     avatarPreview.value = auth.user.avatar || defaultAvatar(auth.user.nickname)
   }
   loadBlocked()
@@ -148,13 +187,19 @@ async function save() {
   }
   saving.value = true
   try {
-    const body = { nickname: form.value.nickname }
+    const body = {
+      nickname: form.value.nickname,
+      email: form.value.email || null,
+      showPurchases: form.value.showPurchases,
+      showFavorites: form.value.showFavorites,
+      notifyReply: form.value.notifyReply,
+      notifyMention: form.value.notifyMention,
+    }
     if (form.value.password) body.password = form.value.password
     if (form.value._avatar) body.avatar = form.value._avatar
 
     const { data } = await api.put('/me/settings', body)
     auth.setUser(data)
-    // Update local avatar
     if (data.avatar) avatarPreview.value = data.avatar
     saveSuccess.value = '保存成功！'
     form.value.password = ''
@@ -179,5 +224,19 @@ async function save() {
   font-size: 13px;
   color: var(--ink, #142033);
   margin-bottom: 4px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.blocked-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line, #f0f2f5);
 }
 </style>

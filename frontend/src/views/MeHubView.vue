@@ -56,9 +56,18 @@ const stats = ref({
   subscriptions: 0,
   favorites: 0,
   unread: 0,
+  myThreads: 0,
+  pmUnread: 0,
 })
 
 const cards = computed(() => [
+  {
+    to: '/messages',
+    title: '私信',
+    desc: '与其他用户一对一沟通',
+    stat: stats.value.pmUnread ? `${stats.value.pmUnread} 条未读` : '查看会话',
+    badge: stats.value.pmUnread || 0,
+  },
   {
     to: '/notifications',
     title: '消息中心',
@@ -97,6 +106,18 @@ const cards = computed(() => [
     stat: `${stats.value.myThreads} 篇帖子`,
   },
   {
+    to: '/shop',
+    title: '积分商城',
+    desc: '头像框、改名卡、转盘券',
+    stat: '去兑换',
+  },
+  {
+    to: '/lottery',
+    title: '幸运转盘',
+    desc: '消耗金币或券抽奖',
+    stat: '去抽奖',
+  },
+  {
     to: '/sign-in',
     title: '签到与任务',
     desc: '每日签到、任务奖励与徽章',
@@ -113,13 +134,14 @@ const cards = computed(() => [
 async function load() {
   if (!auth.isLoggedIn) return
   try {
-    const [d, h, s, f, n, t] = await Promise.all([
+    const [d, h, s, f, n, t, pm] = await Promise.all([
       api.get('/me/drafts'),
       api.get('/me/history', { params: { take: 100 } }),
       api.get('/me/subscriptions'),
-      api.get(`/users/${auth.user.id}/favorites`),
+      api.get('/me/favorites'),
       api.get('/me/notifications/summary'),
       api.get('/me/threads', { params: { page: 1, pageSize: 1 } }),
+      api.get('/messages/unread-count'),
     ])
     stats.value = {
       drafts: d.data?.length || 0,
@@ -128,8 +150,9 @@ async function load() {
       favorites: f.data?.length || 0,
       unread: n.data?.totalUnread || 0,
       myThreads: t.data?.total || 0,
+      pmUnread: pm.data?.count || 0,
     }
-  } catch { console.warn('loadStats failed') }
+  } catch { /* ignore */ }
 }
 
 watch(() => auth.isLoggedIn, load)

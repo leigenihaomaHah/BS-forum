@@ -18,22 +18,15 @@ public static class DbSeeder
         await EnsureBannerSchemaAsync(db);
         await EnsureRechargeSchemaAsync(db);
         await EnsureFavoriteFolderSchemaAsync(db);
-
-        if (!await db.LevelRules.AnyAsync())
-        {
-            db.LevelRules.AddRange(
-                new LevelRule { Level = 1, Name = "见习会员", MinPoints = 0 },
-                new LevelRule { Level = 2, Name = "正式会员", MinPoints = 50 },
-                new LevelRule { Level = 3, Name = "活跃会员", MinPoints = 200 },
-                new LevelRule { Level = 4, Name = "资深会员", MinPoints = 800 },
-                new LevelRule { Level = 5, Name = "金牌会员", MinPoints = 2000 },
-                new LevelRule { Level = 6, Name = "论坛元老", MinPoints = 5000 }
-            );
-            await db.SaveChangesAsync();
-        }
+        await EnsureUpgradeSchemaAsync(db);
+        await EnsureDefaultLevelRulesAsync(db);
+        await RepairCorruptedSeedTextAsync(db);
 
         if (await db.Users.AnyAsync())
+        {
+            await SyncReplyCountsAsync(db);
             return;
+        }
 
         var admin = new User
         {
@@ -153,6 +146,111 @@ public static class DbSeeder
             });
         }
         await db.SaveChangesAsync();
+
+        // Create seed reply posts matching ReplyCount for each thread
+        foreach (var (fid, aid, title, content, views, replies, likes) in seedThreads)
+        {
+            var thread = await db.Threads.FirstAsync(t => t.ForumId == fid && t.AuthorId == aid && t.Title == title);
+            var existingReplies = await db.Posts.CountAsync(p => p.ThreadId == thread.Id && p.Floor > 1);
+            for (var i = existingReplies; i < replies; i++)
+            {
+                db.Posts.Add(new Post
+                {
+                    ThreadId = thread.Id,
+                    AuthorId = aid,
+                    Content = $"回帖测试内容 #{i + 1}：说得很有道理，顶一个！",
+                    Floor = i + 2,
+                    CreatedAt = thread.CreatedAt.AddMinutes((i + 1) * 2),
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+        await SyncReplyCountsAsync(db);
+    }
+
+    /// <summary>
+    /// PowerShell 5 Invoke-RestMethod 默认非 UTF-8，测试脚本回写用户时会把中文昵称变成 ????.
+    /// 启动时修复演示账号与明显损坏的等级名。
+    /// </summary>
+    private static async Task RepairCorruptedSeedTextAsync(AppDbContext db)
+    {
+        var changed = false;
+        var demoNicks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["admin"] = "站长",
+            ["demo"] = "演示用户",
+            ["newbie"] = "新人小白",
+        };
+        var demoNames = demoNicks.Keys.ToArray();
+        var users = await db.Users.Where(u => demoNames.Contains(u.Username)).ToListAsync();
+        foreach (var u in users)
+        {
+            if (!demoNicks.TryGetValue(u.Username, out var nick)) continue;
+            if (!IsCorruptedText(u.Nickname) && !string.IsNullOrWhiteSpace(u.Nickname))
+                continue;
+            u.Nickname = nick;
+            changed = true;
+        }
+
+        var levelDefaults = new Dictionary<int, string>
+        {
+            [1] = "见习会员",
+            [2] = "正式会员",
+            [3] = "活跃会员",
+            [4] = "资深会员",
+            [5] = "金牌会员",
+            [6] = "论坛元老",
+        };
+        foreach (var rule in await db.LevelRules.ToListAsync())
+        {
+            if (!levelDefaults.TryGetValue(rule.Level, out var name)) continue;
+            // 测试时误改成 test，或编码损坏成 ???
+            if (rule.Name is "test" or "Test" || IsCorruptedText(rule.Name))
+            {
+                rule.Name = name;
+                changed = true;
+            }
+        }
+
+        if (changed) await db.SaveChangesAsync();
+    }
+
+    private static bool IsCorruptedText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return true;
+        // 全是 ? / � 基本可判定为编码损坏
+        return text.All(c => c is '?' or '\uFFFD' or '？');
+    }
+
+    private static async Task EnsureDefaultLevelRulesAsync(AppDbContext db)
+    {
+        if (await db.LevelRules.AnyAsync()) return;
+        db.LevelRules.AddRange(
+            new LevelRule { Level = 1, Name = "见习会员", MinPoints = 0 },
+            new LevelRule { Level = 2, Name = "正式会员", MinPoints = 50 },
+            new LevelRule { Level = 3, Name = "活跃会员", MinPoints = 200 },
+            new LevelRule { Level = 4, Name = "资深会员", MinPoints = 800 },
+            new LevelRule { Level = 5, Name = "金牌会员", MinPoints = 2000 },
+            new LevelRule { Level = 6, Name = "论坛元老", MinPoints = 5000 }
+        );
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SyncReplyCountsAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            UPDATE "Threads" SET "ReplyCount" = (
+                SELECT COALESCE(COUNT(*), 0) FROM "Posts"
+                WHERE "Posts"."ThreadId" = "Threads"."Id" AND "Posts"."Floor" > 1
+            )
+            WHERE "Id" IN (
+                SELECT "Id" FROM "Threads" t
+                WHERE t."ReplyCount" != (
+                    SELECT COALESCE(COUNT(*), 0) FROM "Posts"
+                    WHERE "Posts"."ThreadId" = t."Id" AND "Posts"."Floor" > 1
+                )
+            )
+        """);
     }
 
     private static async Task EnsureNotificationsTableAsync(AppDbContext db)
@@ -647,6 +745,80 @@ public static class DbSeeder
         }
         if (!cols.Contains("FolderId"))
             await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "ThreadFavorites" ADD COLUMN "FolderId" INTEGER NULL REFERENCES "FavoriteFolders"("Id") ON DELETE SET NULL;""");
+    }
+
+    private static async Task EnsureUpgradeSchemaAsync(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        async Task EnsureColumn(string table, string column, string sqlType)
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info('{table}')";
+            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                    cols.Add(reader["name"]?.ToString() ?? "");
+            }
+            if (!cols.Contains(column))
+                await db.Database.ExecuteSqlRawAsync($"""ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlType};""");
+        }
+
+        await EnsureColumn("Posts", "EditedAt", "TEXT NULL");
+        await EnsureColumn("Posts", "IsDeleted", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("Posts", "DeletedAt", "TEXT NULL");
+        await EnsureColumn("Threads", "PendingReview", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("Users", "ShowPurchases", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("Users", "ShowFavorites", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("Users", "Email", "TEXT NULL");
+        await EnsureColumn("Users", "NotifyReply", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumn("Users", "NotifyMention", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumn("Notifications", "PostId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("Notifications", "Floor", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumn("UserInventories", "Quantity", "INTEGER NOT NULL DEFAULT 1");
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "PrivateMessages" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_PrivateMessages" PRIMARY KEY AUTOINCREMENT,
+                "SenderId" INTEGER NOT NULL,
+                "ReceiverId" INTEGER NOT NULL,
+                "Content" TEXT NOT NULL,
+                "IsRead" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAt" TEXT NOT NULL
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS "IX_PrivateMessages_SenderId_ReceiverId"
+            ON "PrivateMessages" ("SenderId", "ReceiverId");
+            """);
+
+        var defaults = new Dictionary<string, string>
+        {
+            ["site_name"] = "BS Forum",
+            ["site_description"] = "BS 综合社区",
+            ["allow_register"] = "1",
+            ["require_review"] = "0",
+            ["max_replies_per_day"] = "50",
+            ["max_file_size_mb"] = "10",
+            ["default_points"] = "0",
+            ["default_coins"] = "10",
+            ["points_per_thread"] = "10",
+            ["points_per_reply"] = "2",
+            ["points_per_sign_in"] = "5",
+            ["coins_per_sign_in"] = "2",
+            ["coins_per_thread"] = "0",
+            ["coins_per_reply"] = "1",
+        };
+        var existing = await db.SiteSettings.Select(s => s.Key).ToListAsync();
+        foreach (var (k, v) in defaults)
+        {
+            if (!existing.Contains(k))
+                db.SiteSettings.Add(new SiteSetting { Key = k, Value = v });
+        }
+        await db.SaveChangesAsync();
     }
 
     private static string GenInviteCode(int userId)

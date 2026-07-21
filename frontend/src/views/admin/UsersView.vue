@@ -93,6 +93,25 @@
             <label class="form-label">密码（留空不修改）</label>
             <input v-model="editForm.password" type="password" class="form-control" placeholder="新密码" autocomplete="new-password" />
           </div>
+          <div class="mb-2">
+            <label class="form-label">
+              <input v-model="editForm.isVip" type="checkbox" class="me-1" />
+              VIP 会员
+            </label>
+          </div>
+          <div v-if="editForm.isVip" class="mb-2">
+            <label class="form-label">延长天数（0=永久）</label>
+            <input v-model.number="editForm.vipDays" type="number" min="0" class="form-control" />
+          </div>
+          <div v-if="editForm.isVip" class="mb-2">
+            <label class="form-label">会员档位</label>
+            <select v-model.number="editForm.vipTier" class="form-control">
+              <option :value="1">月卡</option>
+              <option :value="2">季卡</option>
+              <option :value="3">年卡</option>
+              <option :value="4">永久</option>
+            </select>
+          </div>
           <div v-if="editError" class="text-danger mb-2" style="font-size: 13px">{{ editError }}</div>
         </div>
         <div class="modal-actions">
@@ -179,7 +198,15 @@ async function load(p) {
 
 function editUser(u) {
   editing.value = u
-  editForm.value = { nickname: u.nickname, points: u.points, coins: u.coins, password: '' }
+  editForm.value = {
+    nickname: u.nickname,
+    points: u.points,
+    coins: u.coins,
+    password: '',
+    isVip: !!u.isVip,
+    vipDays: u.isVip ? 0 : 30,
+    vipTier: u.vipTier || 1,
+  }
   editError.value = ''
 }
 
@@ -187,8 +214,17 @@ async function saveUser() {
   saving.value = true
   editError.value = ''
   try {
-    const body = { nickname: editForm.value.nickname, points: editForm.value.points, coins: editForm.value.coins }
+    const body = {
+      nickname: editForm.value.nickname,
+      points: editForm.value.points,
+      coins: editForm.value.coins,
+      isVip: editForm.value.isVip,
+    }
     if (editForm.value.password) body.password = editForm.value.password
+    if (editForm.value.isVip) {
+      body.vipDays = editForm.value.vipDays
+      body.vipTier = editForm.value.vipTier
+    }
     await api.put(`/admin/users/${editing.value.id}`, body)
     editing.value = null
     await load(page.value)

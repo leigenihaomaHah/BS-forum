@@ -28,7 +28,7 @@ public class HotService
         var threads = await _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Where(t => t.CreatedAt >= start && !t.IsHidden)
+            .Where(t => t.CreatedAt >= start && !t.IsHidden && !t.PendingReview)
             .ToListAsync();
 
         var scored = threads.Select(t =>
@@ -62,7 +62,7 @@ public class HotService
         var threads = await _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Where(t => t.IsEssence && !t.IsHidden)
+            .Where(t => t.IsEssence && !t.IsHidden && !t.PendingReview)
             .OrderByDescending(t => t.LastReplyAt)
             .Take(take)
             .ToListAsync();

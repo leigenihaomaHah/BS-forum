@@ -25,6 +25,15 @@ public class User
     public int VipTier { get; set; }
     public int LotteryTickets { get; set; }
     public string? AvatarFrame { get; set; }
+    /// <summary>他人是否可见购买记录。</summary>
+    public bool ShowPurchases { get; set; }
+    /// <summary>他人是否可见收藏。</summary>
+    public bool ShowFavorites { get; set; }
+    public string? Email { get; set; }
+    /// <summary>被回帖通知（站内）。</summary>
+    public bool NotifyReply { get; set; } = true;
+    /// <summary>被 @ 通知。</summary>
+    public bool NotifyMention { get; set; } = true;
 
     public ICollection<ForumThread> Threads { get; set; } = new List<ForumThread>();
     public ICollection<Post> Posts { get; set; } = new List<Post>();

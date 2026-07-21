@@ -16,7 +16,7 @@ public class LotteryController : ControllerBase
 
     [HttpGet("config")]
     [AllowAnonymous]
-    public ActionResult<LotteryConfigDto> Config() => Ok(_lottery.GetConfig());
+    public async Task<ActionResult<LotteryConfigDto>> Config() => Ok(await _lottery.GetConfigAsync());
 
     [HttpGet("recent")]
     [AllowAnonymous]

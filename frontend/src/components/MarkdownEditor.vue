@@ -221,8 +221,13 @@ function getCaretCoords(textarea) {
 .md-editor {
   border: 1px solid rgba(20,32,51,0.12);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
+  position: relative;
+  z-index: 1;
+}
+.md-editor:focus-within {
+  z-index: 30;
 }
 .md-editor-tabs {
   display: flex;
@@ -231,6 +236,8 @@ function getCaretCoords(textarea) {
   padding: 6px 8px;
   background: #f8fafc;
   border-bottom: 1px solid rgba(20,32,51,0.08);
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
 }
 .md-tab {
   padding: 4px 14px;
@@ -296,7 +303,7 @@ function getCaretCoords(textarea) {
 }
 .mention-dropdown {
   position: absolute;
-  z-index: 100;
+  z-index: 200;
   background: #fff;
   border: 1px solid rgba(20,32,51,0.12);
   border-radius: 8px;

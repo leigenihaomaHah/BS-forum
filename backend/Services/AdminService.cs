@@ -252,6 +252,25 @@ public class AdminService
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
         }
 
+        if (req.IsVip == false)
+        {
+            user.IsVip = false;
+            user.VipUntil = null;
+            user.VipTier = 0;
+        }
+        if (req.IsVip == true || req.VipDays.HasValue)
+        {
+            RechargeService.GrantVip(user, req.VipDays ?? 30);
+            if (req.VipTier.HasValue)
+                VipAccess.ApplyVipTier(user, req.VipTier.Value);
+            else if (req.VipDays.HasValue)
+                VipAccess.ApplyVipTier(user, VipAccess.TierFromVipDays(req.VipDays));
+        }
+        else if (req.VipTier.HasValue && user.IsEffectivelyVip())
+        {
+            VipAccess.ApplyVipTier(user, req.VipTier.Value);
+        }
+
         await _levels.RecalculateLevelAsync(user);
         await _db.SaveChangesAsync();
         var ln = await _levels.GetLevelNameAsync(user.Level);
@@ -313,6 +332,7 @@ public class AdminService
         else if (status is "locked" or "replies_locked") q = q.Where(t => t.RepliesLocked);
         else if (status == "pinned") q = q.Where(t => t.IsPinned);
         else if (status is "essence" or "精品") q = q.Where(t => t.IsEssence);
+        else if (status is "pending" or "review") q = q.Where(t => t.PendingReview && !t.IsHidden);
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.CreatedAt)
@@ -321,10 +341,59 @@ public class AdminService
             .Select(t => new AdminThreadItemDto(
                 t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.Author.Level,
                 t.ReplyCount, t.Views, t.LikeCount, t.CreatedAt,
-                t.IsHidden, t.RepliesLocked, t.IsPinned, t.IsEssence))
+                t.IsHidden, t.RepliesLocked, t.IsPinned, t.IsEssence,
+                t.ForumId, t.PendingReview))
             .ToListAsync();
 
         return new PagedResult<AdminThreadItemDto>(items, total, page, pageSize);
+    }
+
+    public async Task<(bool Ok, string? Error)> ApproveThreadReviewAsync(int adminId, int threadId)
+    {
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread == null) return (false, "帖子不存在");
+        if (!thread.PendingReview) return (false, "该帖不在待审状态");
+        thread.PendingReview = false;
+        await LogAsync(adminId, "thread", threadId, "approve_review", null);
+        await _notifications.AddSystemNotificationAsync(thread.AuthorId, $"你的帖子「{thread.Title}」已通过审核", thread.Id, thread.Title);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> RejectThreadReviewAsync(int adminId, int threadId, string? reason)
+    {
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread == null) return (false, "帖子不存在");
+        if (!thread.PendingReview) return (false, "该帖不在待审状态");
+        thread.PendingReview = false;
+        thread.IsHidden = true;
+        await LogAsync(adminId, "thread", threadId, "reject_review", reason);
+        var msg = string.IsNullOrWhiteSpace(reason)
+            ? $"你的帖子「{thread.Title}」未通过审核"
+            : $"你的帖子「{thread.Title}」未通过审核：{reason.Trim()}";
+        await _notifications.AddSystemNotificationAsync(thread.AuthorId, msg, thread.Id, thread.Title);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> MoveThreadAsync(int adminId, int threadId, int forumId)
+    {
+        var thread = await _db.Threads.Include(t => t.Forum).FirstOrDefaultAsync(t => t.Id == threadId);
+        if (thread == null) return (false, "帖子不存在");
+        if (thread.ForumId == forumId) return (false, "已在目标版块");
+        var dest = await _db.Forums.FindAsync(forumId);
+        if (dest == null) return (false, "目标版块不存在");
+
+        var src = thread.Forum;
+        var postCount = await _db.Posts.CountAsync(p => p.ThreadId == threadId && !p.IsDeleted);
+        src.ThreadCount = Math.Max(0, src.ThreadCount - 1);
+        src.PostCount = Math.Max(0, src.PostCount - Math.Max(1, postCount));
+        dest.ThreadCount += 1;
+        dest.PostCount += Math.Max(1, postCount);
+        thread.ForumId = forumId;
+        await LogAsync(adminId, "thread", threadId, "move", $"forum:{src.Id}->{forumId}");
+        await _db.SaveChangesAsync();
+        return (true, null);
     }
 
     public async Task<(bool Ok, string? Error)> DeleteThreadAsync(int id)
@@ -907,9 +976,8 @@ public class AdminService
                 _db.SiteSettings.Add(new SiteSetting { Key = key, Value = value });
         }
         await _db.SaveChangesAsync();
+        SiteSettingsService.Invalidate();
     }
-
-    // ── Data Export ──────────────────────────────────────
 
     public async Task<string> ExportUsersCsvAsync()
     {

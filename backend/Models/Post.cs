@@ -11,6 +11,9 @@ public class Post
     public int Floor { get; set; }
     public int? ReplyToPostId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? EditedAt { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
 
     public ForumThread Thread { get; set; } = null!;
     public User Author { get; set; } = null!;

@@ -43,6 +43,7 @@ public class AppDbContext : DbContext
     public DbSet<RechargeOrder> RechargeOrders => Set<RechargeOrder>();
     public DbSet<RechargeCard> RechargeCards => Set<RechargeCard>();
     public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
+    public DbSet<PrivateMessage> PrivateMessages => Set<PrivateMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -232,6 +233,21 @@ public class AppDbContext : DbContext
             .HasOne(c => c.Package)
             .WithMany()
             .HasForeignKey(c => c.PackageId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PrivateMessage>()
+            .HasIndex(m => new { m.ReceiverId, m.IsRead, m.CreatedAt });
+
+        modelBuilder.Entity<PrivateMessage>()
+            .HasOne(m => m.Sender)
+            .WithMany()
+            .HasForeignKey(m => m.SenderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PrivateMessage>()
+            .HasOne(m => m.Receiver)
+            .WithMany()
+            .HasForeignKey(m => m.ReceiverId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
