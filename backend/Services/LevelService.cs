@@ -35,7 +35,7 @@ public class LevelService
     {
         var rules = await GetRulesAsync();
         return rules.Select(r => new LevelRuleDto(
-            r.Level, r.Name, r.MinPoints,
+            r.Id, r.Level, r.Name, r.MinPoints,
             Benefits.GetValueOrDefault(r.Level) ?? ["浏览帖子"])).ToList();
     }
 
@@ -58,5 +58,10 @@ public class LevelService
         var rules = await GetRulesAsync();
         var next = rules.Where(r => r.Level > currentLevel).OrderBy(r => r.Level).FirstOrDefault();
         return next?.MinPoints ?? points;
+    }
+
+    public void InvalidateCache()
+    {
+        _cache = null;
     }
 }

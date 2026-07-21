@@ -32,6 +32,13 @@ public class ThreadsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{id:int}/posts")]
+    public async Task<ActionResult<PagedResult<PostDto>>> GetPosts(int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        return Ok(await _threads.GetPostsAsync(id, uid, page, pageSize));
+    }
+
     [Authorize]
     [HttpPost]
     public async Task<ActionResult<ThreadDetailDto>> Create([FromBody] CreateThreadRequest req)

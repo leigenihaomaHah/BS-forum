@@ -39,7 +39,7 @@
           <router-link :to="`/thread/${forum.latestThread.id}`">
             {{ forum.latestThread.title }}
           </router-link>
-          <div class="text-muted mt-1">{{ formatTime(forum.latestThread.createdAt) }}</div>
+          <div class="text-muted mt-1">{{ formatTime(forum.latestThread.createdAt, false) }}</div>
           <div>
             <span class="level-badge">Lv.{{ forum.latestThread.authorLevel }}</span>
             {{ forum.latestThread.authorNickname }}
@@ -54,6 +54,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { formatTime } from '../utils/time.js'
 
 defineProps({
   category: { type: Object, required: true }
@@ -61,12 +62,6 @@ defineProps({
 
 const open = ref(true)
 
-function formatTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 </script>
 
 <style scoped>

@@ -193,6 +193,7 @@ public class CommunityService
 
     public async Task<(ShopBuyResultDto? Result, string? Error)> BuyAsync(int userId, int itemId)
     {
+        await using var tx = await _db.Database.BeginTransactionAsync();
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return (null, "用户不存在");
         ClearExpiredVip(user);
@@ -234,6 +235,7 @@ public class CommunityService
         }
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         await TryAwardBadgeAsync(userId, "shopper", () => Task.FromResult(true));
         return (new ShopBuyResultDto("购买成功", user.Coins, user.Points, user.LotteryTickets, user.IsEffectivelyVip(), user.AvatarFrame), null);
     }
@@ -448,6 +450,44 @@ public class CommunityService
 
     public Task<bool> IsForumModeratorAsync(int userId, int forumId) =>
         _db.ForumModerators.AnyAsync(m => m.UserId == userId && m.ForumId == forumId);
+
+    public async Task<(bool Ok, string? Error)> BlockUserAsync(int userId, int blockedUserId)
+    {
+        if (userId == blockedUserId) return (false, "不能屏蔽自己");
+        var exists = await _db.Users.AnyAsync(u => u.Id == blockedUserId);
+        if (!exists) return (false, "用户不存在");
+        if (await _db.UserBlocks.AnyAsync(b => b.UserId == userId && b.BlockedUserId == blockedUserId))
+            return (true, null); // already blocked, no-op
+        _db.UserBlocks.Add(new UserBlock { UserId = userId, BlockedUserId = blockedUserId, CreatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task UnblockUserAsync(int userId, int blockedUserId)
+    {
+        var block = await _db.UserBlocks.FirstOrDefaultAsync(b => b.UserId == userId && b.BlockedUserId == blockedUserId);
+        if (block != null) { _db.UserBlocks.Remove(block); await _db.SaveChangesAsync(); }
+    }
+
+    public async Task<List<int>> GetBlockedUserIdsAsync(int userId) =>
+        await _db.UserBlocks.Where(b => b.UserId == userId).Select(b => b.BlockedUserId).ToListAsync();
+
+    public async Task<List<UserDto>> GetBlockedUsersAsync(int userId)
+    {
+        var blockedIds = await _db.UserBlocks.Where(b => b.UserId == userId).Select(b => b.BlockedUserId).ToListAsync();
+        if (blockedIds.Count == 0) return new List<UserDto>();
+        var users = await _db.Users.Where(u => blockedIds.Contains(u.Id)).ToListAsync();
+        var result = new List<UserDto>();
+        foreach (var u in users)
+        {
+            var levelName = await _levels.GetLevelNameAsync(u.Level);
+            result.Add(new UserDto(u.Id, u.Username, u.Nickname, u.Avatar, u.Points, u.Coins, u.Level, levelName,
+                u.ConsecutiveSignInDays, false, u.IsAdmin, u.IsAdmin ? "admin" : "user",
+                u.IsEffectivelyMuted(), u.MutedUntil, u.InviteCode ?? "", u.IsVip, u.VipUntil, u.VipTier,
+                VipAccess.TierLabel(u.VipTier), u.LotteryTickets, u.AvatarFrame));
+        }
+        return result;
+    }
 
     public static List<string> ExtractMentions(string content)
     {

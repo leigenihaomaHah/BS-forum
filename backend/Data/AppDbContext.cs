@@ -20,9 +20,11 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ThreadPurchase> ThreadPurchases => Set<ThreadPurchase>();
     public DbSet<ThreadFavorite> ThreadFavorites => Set<ThreadFavorite>();
+    public DbSet<FavoriteFolder> FavoriteFolders => Set<FavoriteFolder>();
     public DbSet<ModerationLog> ModerationLogs => Set<ModerationLog>();
     public DbSet<LotterySpin> LotterySpins => Set<LotterySpin>();
     public DbSet<UserFollow> UserFollows => Set<UserFollow>();
+    public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<ThreadTag> ThreadTags => Set<ThreadTag>();
     public DbSet<ShopItem> ShopItems => Set<ShopItem>();
@@ -40,6 +42,7 @@ public class AppDbContext : DbContext
     public DbSet<RechargePackage> RechargePackages => Set<RechargePackage>();
     public DbSet<RechargeOrder> RechargeOrders => Set<RechargeOrder>();
     public DbSet<RechargeCard> RechargeCards => Set<RechargeCard>();
+    public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -119,6 +122,18 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ThreadFavorite>()
+            .HasOne(f => f.User)
+            .WithMany()
+            .HasForeignKey(f => f.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ThreadFavorite>()
+            .HasOne(f => f.Folder)
+            .WithMany(f => f.Favorites)
+            .HasForeignKey(f => f.FolderId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<FavoriteFolder>()
             .HasOne(f => f.User)
             .WithMany()
             .HasForeignKey(f => f.UserId)

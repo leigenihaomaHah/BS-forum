@@ -80,6 +80,27 @@ public class AuthService
         return (new AuthResponse(token, await ToUserDtoAsync(user)), null);
     }
 
+    public async Task<(bool Success, string? Error)> ResetPasswordAsync(ResetPasswordRequest req)
+    {
+        var username = (req.Username ?? "").Trim();
+        var nickname = (req.Nickname ?? "").Trim();
+        if (username.Length < 3) return (false, "请输入用户名");
+        if (nickname.Length < 1) return (false, "请输入昵称");
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user == null) return (false, "用户名或昵称不匹配");
+
+        if (!string.Equals(user.Nickname, nickname, StringComparison.OrdinalIgnoreCase))
+            return (false, "用户名或昵称不匹配");
+
+        var pwdError = PasswordRules.Validate(req.NewPassword);
+        if (pwdError != null) return (false, pwdError);
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
     public async Task<UserDto?> GetMeAsync(int userId)
     {
         var user = await _db.Users.FindAsync(userId);

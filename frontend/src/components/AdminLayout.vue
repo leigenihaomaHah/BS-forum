@@ -58,6 +58,14 @@ const navItems = [
   { to: '/admin/moderators', icon: '🛡️', label: '版主管理' },
   { to: '/admin/banners', icon: '🖼️', label: '首页广告' },
   { to: '/admin/recharge', icon: '💎', label: '会员申请' },
+  { to: '/admin/tags', icon: '🏷️', label: '标签管理' },
+  { to: '/admin/posts', icon: '💬', label: '回复管理' },
+  { to: '/admin/ledger', icon: '📊', label: '流水查询' },
+  { to: '/admin/invites', icon: '📨', label: '邀请码' },
+  { to: '/admin/settings', icon: '⚙️', label: '站点设置' },
+  { to: '/admin/export', icon: '📥', label: '数据导出' },
+  { to: '/admin/broadcast', icon: '📢', label: '广播通知' },
+  { to: '/admin/modlogs', icon: '📋', label: '操作日志' },
 ]
 </script>
 

@@ -55,6 +55,19 @@
           </div>
         </div>
       </div>
+
+      <div class="panel mt-3">
+        <div class="panel-header"><span class="accent"></span>黑名单</div>
+        <div class="p-3">
+          <div v-if="blockedLoading" class="text-muted" style="font-size:13px">加载中...</div>
+          <div v-else-if="!blockedUsers.length" class="text-muted" style="font-size:13px">暂无已屏蔽的用户</div>
+          <div v-for="u in blockedUsers" :key="u.id" class="blocked-row">
+            <router-link :to="`/user/${u.id}`" class="fw-bold" style="font-size:13px;color:#142033;text-decoration:none">{{ u.nickname }}</router-link>
+            <span class="text-muted ms-2" style="font-size:12px">@{{ u.username }}</span>
+            <button class="btn btn-sm btn-outline-secondary ms-auto" @click="unblock(u.id)">取消屏蔽</button>
+          </div>
+        </div>
+      </div>
     </template>
   </AppLayout>
 </template>
@@ -66,6 +79,8 @@ import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import { passwordError } from '../utils/password.js'
+import { compressImage } from '../utils/image.js'
+import { defaultAvatar } from '../utils/avatar.js'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
@@ -79,9 +94,24 @@ const form = ref({
   password: '',
 })
 
-function defaultAvatar(name) {
-  const n = encodeURIComponent((name || '?').slice(0, 1))
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${n}`
+const blockedUsers = ref([])
+const blockedLoading = ref(false)
+
+async function loadBlocked() {
+  if (!auth.isLoggedIn) return
+  blockedLoading.value = true
+  try {
+    const { data } = await api.get('/users/blocked')
+    blockedUsers.value = data || []
+  } catch { blockedUsers.value = [] }
+  finally { blockedLoading.value = false }
+}
+
+async function unblock(id) {
+  try {
+    await api.delete(`/users/${id}/block`)
+    blockedUsers.value = blockedUsers.value.filter(u => u.id !== id)
+  } catch (e) { saveError.value = e.message }
 }
 
 onMounted(() => {
@@ -89,6 +119,7 @@ onMounted(() => {
     form.value.nickname = auth.user.nickname
     avatarPreview.value = auth.user.avatar || defaultAvatar(auth.user.nickname)
   }
+  loadBlocked()
 })
 
 function uploadAvatar(e) {
@@ -103,31 +134,6 @@ function uploadAvatar(e) {
     form.value._avatar = dataUrl
   })
   e.target.value = ''
-}
-
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxDim || height > maxDim) {
-          const ratio = Math.min(maxDim / width, maxDim / height)
-          width = Math.round(width * ratio)
-          height = Math.round(height * ratio)
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 async function save() {

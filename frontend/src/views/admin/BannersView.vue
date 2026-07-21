@@ -89,6 +89,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
+import { useToastStore } from '../../stores/toast'
+import { compressImage } from '../../utils/image.js'
+
+const toast = useToastStore()
 
 const items = ref([])
 const editing = ref(null)
@@ -129,30 +133,6 @@ function openEdit(b) {
   }
   error.value = ''
   editing.value = true
-}
-
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxDim || height > maxDim) {
-          const ratio = Math.min(maxDim / width, maxDim / height)
-          width = Math.round(width * ratio)
-          height = Math.round(height * ratio)
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 async function onFile(e) {
@@ -205,7 +185,7 @@ async function remove(b) {
     await api.delete(`/admin/banners/${b.id}`)
     await load()
   } catch (e) {
-    alert(e.response?.data?.message || e.message)
+    toast.error(e.response?.data?.message || e.message)
   }
 }
 
@@ -213,12 +193,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
 .thumb {
   width: 96px;
   height: 36px;

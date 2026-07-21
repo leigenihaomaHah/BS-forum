@@ -59,8 +59,7 @@
           </div>
           <input v-model="tagsInput" class="form-control mb-2" maxlength="40" placeholder="标签，逗号分隔，最多 3 个（可选）" />
 
-          <textarea v-model="content" class="form-control mb-1" rows="8" placeholder="正文内容（可用 @昵称 提醒他人，支持 Markdown）"></textarea>
-          <div class="text-muted mb-2" style="font-size:12px">{{ mdHint }}</div>
+          <MarkdownEditor v-model="content" class="mb-2" :rows="10" :hint="mdHint" placeholder="正文内容（可用 @昵称 提醒他人，支持 Markdown）" />
 
           <div class="image-upload mb-2">
             <div class="image-preview-list">
@@ -112,7 +111,10 @@ import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import { canCreateThread, getNextLevel } from '../config/levels.js'
+import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { markdownHint } from '../utils/markdown.js'
+import { compressImage } from '../utils/image.js'
+import { uploadImages } from '../utils/upload.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,7 +136,33 @@ const draftId = ref(null)
 const draftHint = ref('')
 const savingDraft = ref(false)
 let autosaveTimer = null
+let lsTimer = null
 let skipAutosave = true
+
+const LS_DRAFT_KEY = () => `draft_${forumId.value}`
+
+function saveLocalDraft() {
+  const data = { title: title.value, content: content.value, type: threadType.value, coinPrice: coinPrice.value, tags: tagsInput.value, pollOptions: pollOptions.value, images: images.value }
+  try { localStorage.setItem(LS_DRAFT_KEY(), JSON.stringify(data)) } catch {}
+}
+
+function loadLocalDraft() {
+  try {
+    const raw = localStorage.getItem(LS_DRAFT_KEY())
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function clearLocalDraft() {
+  try { localStorage.removeItem(LS_DRAFT_KEY()) } catch {}
+}
+
+function scheduleLocalAutosave() {
+  clearTimeout(lsTimer)
+  if (submitting.value) return
+  lsTimer = setTimeout(saveLocalDraft, 3000)
+}
 
 const canPost = computed(() => auth.user && canCreateThread(auth.user.level))
 const nextLv = computed(() => auth.user ? getNextLevel(auth.user.points) : null)
@@ -167,23 +195,34 @@ async function checkForumAccess() {
 async function loadDraft() {
   await checkForumAccess()
   if (vipDenied.value || !auth.isLoggedIn) return
+  let loaded = false
   try {
     if (route.query.draft) {
       const { data } = await api.get(`/me/drafts/${route.query.draft}`)
       applyDraft(data)
+      loaded = true
     } else {
       try {
         const { data } = await api.get(`/me/drafts/forum/${forumId.value}`)
-        if (data?.id) applyDraft(data)
-      } catch {
-        // 404 = no draft
-      }
+        if (data?.id) { applyDraft(data); loaded = true }
+      } catch { /* 404 */ }
     }
-  } catch {
-    draftHint.value = ''
-  } finally {
-    skipAutosave = false
+  } catch { draftHint.value = '' }
+  if (!loaded) {
+    const local = loadLocalDraft()
+    if (local) {
+      title.value = local.title || ''
+      content.value = local.content || ''
+      threadType.value = local.type || 'public'
+      coinPrice.value = local.coinPrice || 5
+      tagsInput.value = local.tags || ''
+      pollOptions.value = (local.pollOptions && local.pollOptions.length >= 2) ? [...local.pollOptions] : ['', '']
+      images.value = local.images || []
+      draftHint.value = '已恢复本地草稿'
+      loaded = true
+    }
   }
+  skipAutosave = false
 }
 
 function draftPayload() {
@@ -227,36 +266,11 @@ function scheduleAutosave() {
       const { data } = await api.post('/me/drafts', draftPayload())
       draftId.value = data.id
       draftHint.value = '已自动保存'
-    } catch {}
+    } catch { console.warn('autoSave failed') }
   }, 2500)
 }
 
-watch([title, content, threadType, coinPrice, tagsInput, pollOptions, images], scheduleAutosave, { deep: true })
-
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxDim || height > maxDim) {
-          const ratio = Math.min(maxDim / width, maxDim / height)
-          width = Math.round(width * ratio)
-          height = Math.round(height * ratio)
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
-  })
-}
+watch([title, content, threadType, coinPrice, tagsInput, pollOptions, images], () => { scheduleAutosave(); scheduleLocalAutosave() }, { deep: true })
 
 function addImages(e) {
   const files = Array.from(e.target.files || [])
@@ -300,18 +314,29 @@ async function submit() {
   }
   submitting.value = true
   clearTimeout(autosaveTimer)
+  let uploadUrls = []
+  if (images.value.length > 0) {
+    try {
+      uploadUrls = await uploadImages(images.value)
+    } catch (e) {
+      error.value = '图片上传失败：' + e.message
+      submitting.value = false
+      return
+    }
+  }
   try {
     const tags = tagsInput.value.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 3)
     const { data } = await api.post('/threads', {
       forumId: forumId.value,
       title: title.value,
       content: content.value,
-      images: images.value,
+      images: uploadUrls,
       type: threadType.value,
       coinPrice: threadType.value === 'coin' ? Number(coinPrice.value) : 0,
       tags,
       pollOptions: threadType.value === 'poll' ? pollOptions.value.map(o => o.trim()).filter(Boolean) : null,
     })
+    clearLocalDraft()
     await auth.fetchMe()
     router.push(`/thread/${data.id}`)
   } catch (e) {
@@ -322,7 +347,7 @@ async function submit() {
 }
 
 onMounted(loadDraft)
-onUnmounted(() => clearTimeout(autosaveTimer))
+onUnmounted(() => { clearTimeout(autosaveTimer); clearTimeout(lsTimer) })
 </script>
 
 <style scoped>

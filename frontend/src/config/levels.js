@@ -24,6 +24,7 @@ export function getLevels() {
 export function setLevels(list) {
   if (!Array.isArray(list) || !list.length) return
   cachedLevels = list.map((l) => ({
+    id: l.id,
     level: l.level,
     name: l.name,
     minPoints: l.minPoints,

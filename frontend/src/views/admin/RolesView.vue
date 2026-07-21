@@ -52,7 +52,10 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useAuthStore } from '../../stores/auth'
+import { useToastStore } from '../../stores/toast'
 import { isAdminUser } from '../../config/levels.js'
+
+const toast = useToastStore()
 
 const auth = useAuthStore()
 const currentUserId = auth.user?.id
@@ -75,7 +78,7 @@ async function setRole(id, role) {
   try {
     await api.put(`/admin/users/${id}/role`, { role })
     await load()
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 onMounted(load)

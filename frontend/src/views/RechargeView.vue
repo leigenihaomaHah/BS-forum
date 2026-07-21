@@ -108,10 +108,12 @@ import { computed, onMounted, ref } from 'vue'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 import api from '../api/http'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const toast = useToastStore()
 const packages = ref([])
 const orders = ref([])
 const selectedId = ref(null)
@@ -144,7 +146,7 @@ async function copyCode(code) {
   if (!code) return
   try {
     await navigator.clipboard.writeText(code)
-    alert('卡密已复制')
+    toast.success('卡密已复制')
   } catch {
     prompt('请手动复制卡密', code)
   }
@@ -172,9 +174,9 @@ async function createOrder(pkg) {
     const { data } = await api.post('/recharge/orders', { packageId: pkg.id })
     lastOrder.value = data
     await loadOrders()
-    alert(`已提交申请 #${data.id}，请转账并备注 VIP${data.id}`)
+    toast.info(`已提交申请 #${data.id}，请转账并备注 VIP${data.id}`)
   } catch (e) {
-    alert(e.message)
+    toast.error(e.message)
   } finally {
     ordering.value = false
   }
@@ -185,7 +187,7 @@ async function cancelOrder(id) {
   try {
     await api.post(`/recharge/orders/${id}/cancel`)
     await loadOrders()
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 onMounted(async () => {

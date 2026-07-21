@@ -71,6 +71,9 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import IconPicker from '../../components/IconPicker.vue'
+import { useToastStore } from '../../stores/toast'
+
+const toast = useToastStore()
 
 const categories = ref([])
 
@@ -110,7 +113,7 @@ async function saveCategory(cat) {
     cat.name = data.name
     cat.icon = data.icon
     cat._editing = false
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function addCategory() {
@@ -123,7 +126,7 @@ async function addCategory() {
       _icon: data.icon || '📁',
       forums: data.forums || []
     })
-  } catch (e) { alert(e.message || '新增分类失败') }
+  } catch (e) { toast.error(e.message || '新增分类失败') }
 }
 
 async function delCategory(id) {
@@ -131,7 +134,7 @@ async function delCategory(id) {
   try {
     await api.delete(`/admin/categories/${id}`)
     categories.value = categories.value.filter((c) => c.id !== id)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 function startEditForum(forum) {
@@ -156,7 +159,7 @@ async function saveForum(forum) {
     forum.minVipTier = data.minVipTier
     forum.accessLabel = data.accessLabel
     forum._editing = false
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function addForum(categoryId) {
@@ -175,7 +178,7 @@ async function addForum(categoryId) {
         _minVipTier: data.minVipTier || 0
       })
     }
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function delForum(id) {
@@ -185,19 +188,13 @@ async function delForum(id) {
     for (const cat of categories.value) {
       cat.forums = cat.forums.filter((f) => f.id !== id)
     }
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 onMounted(load)
 </script>
 
 <style scoped>
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
 .forum-row {
   display: flex;
   align-items: center;

@@ -40,11 +40,11 @@ public class ForumsController : ControllerBase
     }
 
     [HttpGet("{id:int}/threads")]
-    public async Task<IActionResult> GetThreads(int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetThreads(int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string sort = "latest")
     {
         var (ok, error) = await _forums.EnsureForumAccessAsync(id, JwtHelper.GetUserId(User));
         if (!ok) return StatusCode(403, new ApiMessage(error!));
-        return Ok(await _threads.GetThreadsAsync(id, page, pageSize));
+        return Ok(await _threads.GetThreadsAsync(id, page, pageSize, sort));
     }
 }
 

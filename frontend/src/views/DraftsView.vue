@@ -24,17 +24,10 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '../components/AppLayout.vue'
 import api from '../api/http'
+import { timeAgo } from '../utils/time.js'
 
 const items = ref([])
 const loading = ref(false)
-
-function timeAgo(iso) {
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (sec < 60) return '刚刚'
-  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`
-  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`
-  return `${Math.floor(sec / 86400)} 天前`
-}
 
 async function load() {
   loading.value = true

@@ -23,13 +23,9 @@
             </div>
           </div>
           <div class="meta">{{ t.replyCount }} 回复 / {{ t.views }} 浏览</div>
-          <div class="meta">{{ formatTime(t.lastReplyAt) }}</div>
+          <div class="meta">{{ formatTime(t.lastReplyAt, false) }}</div>
         </div>
-        <div v-if="totalPages > 1" class="p-3 d-flex gap-2 justify-content-center">
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-          <span class="align-self-center text-muted">{{ page }} / {{ totalPages }}</span>
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
-        </div>
+        <PaginationComp v-model="page" :total-pages="totalPages" />
       </template>
     </div>
   </AppLayout>
@@ -40,6 +36,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
+import PaginationComp from '../components/PaginationComp.vue'
+import { formatTime } from '../utils/time.js'
 
 const route = useRoute()
 const items = ref([])
@@ -49,12 +47,6 @@ const pageSize = 20
 const loading = ref(true)
 const tagName = computed(() => decodeURIComponent(String(route.params.name || '')))
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-
-function formatTime(iso) {
-  const d = new Date(iso)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 async function load(p = 1) {
   loading.value = true
@@ -75,6 +67,7 @@ async function load(p = 1) {
 
 onMounted(() => load(1))
 watch(() => route.params.name, () => load(1))
+watch(page, (p) => { if (p > 0) load(p) })
 </script>
 
 <style scoped>

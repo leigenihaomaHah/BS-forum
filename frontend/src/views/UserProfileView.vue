@@ -29,6 +29,11 @@
                 :class="profile.followedByMe ? 'btn-outline-secondary' : 'btn-forum'"
                 @click="toggleFollow"
               >{{ profile.followedByMe ? '已关注' : '关注' }}</button>
+              <button
+                v-if="auth.isLoggedIn && auth.user.id !== profile.id"
+                class="btn btn-sm btn-outline-secondary ms-1"
+                @click="toggleBlock"
+              >{{ blocked ? '已屏蔽' : '屏蔽' }}</button>
             </div>
             <div v-if="badges.length" class="badge-row mb-2">
               <span v-for="b in badges.filter(x => x.earnedAt)" :key="b.code" class="ubadge" :title="b.description">{{ b.name }}</span>
@@ -141,7 +146,7 @@
             <div v-else class="p-0">
               <div v-for="(f, idx) in favorites" :key="idx" class="purchase-row">
                 <div class="purchase-info">
-                  <router-link :to="`/thread/${f.id}`" class="purchase-title">{{ f.title }}</router-link>
+                  <router-link :to="`/thread/${f.threadId}`" class="purchase-title">{{ f.title }}</router-link>
                   <div class="purchase-meta">{{ f.forumName }} · {{ formatTime(f.createdAt) }}</div>
                 </div>
               </div>
@@ -178,9 +183,13 @@ import { useRoute } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
+import { useToastStore } from '../stores/toast'
 import { getLevels, getLevel, getNextLevel, getLevelProgress } from '../config/levels.js'
+import { defaultAvatar } from '../utils/avatar.js'
+import { formatTime } from '../utils/time.js'
 
 const auth = useAuthStore()
+const toast = useToastStore()
 const route = useRoute()
 const profile = ref(null)
 const badges = ref([])
@@ -197,16 +206,6 @@ const actLoading = ref(false)
 const currentLevel = computed(() => profile.value ? getLevel(profile.value.points) : getLevels()[0])
 const nextLevel = computed(() => profile.value ? getNextLevel(profile.value.points) : null)
 const progressPct = computed(() => profile.value ? getLevelProgress(profile.value.points) : 0)
-
-function defaultAvatar(nickname) {
-  const n = encodeURIComponent((nickname || '?').slice(0, 1))
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${n}`
-}
-
-function formatTime(iso) {
-  const d = new Date(iso)
-  return d.toLocaleString()
-}
 
 async function loadPurchases() {
   purchasesLoading.value = true
@@ -272,7 +271,25 @@ async function toggleFollow() {
     const { data } = await api.post(`/users/${profile.value.id}/follow`)
     profile.value.followedByMe = data.following
     profile.value.followerCount = (profile.value.followerCount || 0) + (data.following ? 1 : -1)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
+}
+
+const blocked = ref(false)
+
+async function toggleBlock() {
+  if (blocked.value) {
+    try {
+      await api.delete(`/users/${profile.value.id}/block`)
+      blocked.value = false
+      toast.success('已取消屏蔽')
+    } catch (e) { toast.error(e.message) }
+  } else {
+    try {
+      await api.post(`/users/${profile.value.id}/block`)
+      blocked.value = true
+      toast.success('已屏蔽该用户')
+    } catch (e) { toast.error(e.message) }
+  }
 }
 
 watch(activeTab, (tab) => loadTab(tab))

@@ -17,6 +17,15 @@ public class Tag
     public ICollection<ThreadTag> ThreadTags { get; set; } = new List<ThreadTag>();
 }
 
+
+public class UserBlock
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int BlockedUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class ThreadTag
 {
     public int ThreadId { get; set; }

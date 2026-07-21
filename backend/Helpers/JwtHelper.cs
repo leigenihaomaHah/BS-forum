@@ -17,7 +17,10 @@ public class JwtHelper
 
     public string CreateToken(User user)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+        var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET") ?? _config["Jwt:Key"];
+        if (string.IsNullOrEmpty(jwtKey) || jwtKey.Length < 32)
+            throw new InvalidOperationException("JWT_SECRET not configured");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var claims = new[]
         {

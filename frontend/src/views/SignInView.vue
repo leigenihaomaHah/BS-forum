@@ -89,8 +89,7 @@
                   <div class="text-muted" style="font-size:12px">{{ t.description }} · {{ t.progress }}/{{ t.target }}</div>
                 </div>
                 <button
-                  class="btn btn-sm"
-                  :class="t.claimed ? 'btn-outline-secondary' : 'btn-forum'"
+                  class="btn btn-sm btn-forum"
                   :disabled="t.claimed || t.progress < t.target || claiming === t.code"
                   @click="claimTask(t)"
                 >{{ t.claimed ? '已领' : `领 +${t.rewardPoints}分` }}</button>
@@ -214,9 +213,11 @@ import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const toast = useToastStore()
 const signingIn = ref(false)
 const signInResult = ref(null)
 const signInError = ref('')
@@ -259,7 +260,7 @@ async function claimTask(t) {
     await api.post(`/tasks/${t.code}/claim`)
     await auth.fetchMe()
     await loadTasks()
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
   finally { claiming.value = '' }
 }
 

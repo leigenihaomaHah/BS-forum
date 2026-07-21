@@ -43,6 +43,9 @@
 <script setup>
 import { ref } from 'vue'
 import api from '../../api/http'
+import { useToastStore } from '../../stores/toast'
+
+const toast = useToastStore()
 
 const items = ref([])
 const status = ref('pending')
@@ -63,7 +66,7 @@ async function handle(r, action) {
   try {
     await api.post(`/admin/reports/${r.id}/handle`, { action, note: note || null })
     await load()
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 load()
@@ -71,5 +74,5 @@ load()
 
 <style scoped>
 .ops { display: flex; flex-wrap: wrap; gap: 4px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+
 </style>

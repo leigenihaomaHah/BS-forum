@@ -16,10 +16,17 @@
     </div>
 
     <div class="admin-panel">
+      <div v-if="selectedIds.length" class="batch-bar">
+        <span class="batch-count">已选 {{ selectedIds.length }} 条</span>
+        <button class="admin-btn admin-btn-outline admin-btn-sm" @click="batchAction('hide')">批量拉黑</button>
+        <button class="admin-btn admin-btn-outline admin-btn-sm" @click="batchAction('pin')">批量置顶</button>
+        <button class="admin-btn admin-btn-danger admin-btn-sm" @click="batchAction('delete')">批量删除</button>
+        <button class="admin-btn admin-btn-outline admin-btn-sm" @click="selectedIds = []">取消选择</button>
+      </div>
       <table class="admin-table">
         <thead>
           <tr>
-            <th>ID</th>
+            <th><input type="checkbox" :checked="allSelected" @change="toggleAll" /></th>
             <th>标题</th>
             <th>状态</th>
             <th>作者</th>
@@ -32,8 +39,9 @@
         </thead>
         <tbody>
           <tr v-for="t in items" :key="t.id">
+            <td><input type="checkbox" :value="t.id" v-model="selectedIds" /></td>
             <td>{{ t.id }}</td>
-            <td class="td-title">{{ t.title }}</td>
+            <td class="td-title"><router-link :to="`/thread/${t.id}`" target="_blank" class="thread-link">{{ t.title }}</router-link></td>
             <td>
               <span v-if="t.isHidden" class="status-tag tag-danger">拉黑</span>
               <span v-if="t.repliesLocked" class="status-tag tag-warn">禁回</span>
@@ -61,29 +69,19 @@
         </tbody>
       </table>
       <div v-if="!items.length" class="p-3 text-muted">暂无帖子</div>
-      <div class="admin-pagination">
-        <div class="pagination-info">共 {{ total }} 条</div>
-        <div class="pagination-ctrl">
-          <button :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
-        </div>
-        <div class="pagination-size">
-          <select v-model.number="pageSize" @change="load(1)">
-            <option :value="10">10条/页</option>
-            <option :value="20">20条/页</option>
-            <option :value="50">50条/页</option>
-          </select>
-        </div>
-      </div>
+      <PaginationComp v-model="page" :total-pages="totalPages" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../../api/http'
+import { useToastStore } from '../../stores/toast'
+import PaginationComp from '../../components/PaginationComp.vue'
+
+const toast = useToastStore()
 
 const route = useRoute()
 const items = ref([])
@@ -94,6 +92,12 @@ const search = ref('')
 const allowedStatus = new Set(['hidden', 'locked', 'pinned', 'essence'])
 const status = ref(allowedStatus.has(String(route.query.status || '')) ? String(route.query.status) : '')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const selectedIds = ref([])
+const allSelected = computed(() => items.value.length > 0 && selectedIds.value.length === items.value.length)
+
+function toggleAll() {
+  selectedIds.value = allSelected.value ? [] : items.value.map(t => t.id)
+}
 
 function fmt(iso) {
   if (!iso) return ''
@@ -116,7 +120,7 @@ async function copyLink(id) {
   const url = `${window.location.origin}/thread/${id}`
   try {
     await navigator.clipboard.writeText(url)
-    alert('已复制链接：' + url)
+    toast.success('已复制链接：' + url)
   } catch {
     prompt('复制链接', url)
   }
@@ -128,7 +132,7 @@ async function toggleHide(t) {
   try {
     await api.post(`/admin/threads/${t.id}/${t.isHidden ? 'unhide' : 'hide'}`, { reason: reason || null })
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function toggleLock(t) {
@@ -137,14 +141,14 @@ async function toggleLock(t) {
   try {
     await api.post(`/admin/threads/${t.id}/${t.repliesLocked ? 'unlock-replies' : 'lock-replies'}`, { reason: reason || null })
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function togglePin(t) {
   try {
     await api.post(`/admin/threads/${t.id}/${t.isPinned ? 'unpin' : 'pin'}`, {})
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function toggleEssence(t) {
@@ -152,9 +156,9 @@ async function toggleEssence(t) {
   if (reason === null) return
   try {
     const { data } = await api.post(`/admin/threads/${t.id}/${t.isEssence ? 'unessence' : 'essence'}`, { reason: reason || null })
-    if (data?.message) alert(data.message)
+    if (data?.message) toast.success(data.message)
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function delThread(id) {
@@ -162,10 +166,22 @@ async function delThread(id) {
   try {
     await api.delete(`/admin/threads/${id}`)
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
+}
+
+async function batchAction(action) {
+  const labels = { hide: '拉黑', pin: '置顶', delete: '删除' }
+  if (!confirm(`确定对 ${selectedIds.value.length} 个帖子执行"${labels[action] || action}"操作？`)) return
+  try {
+    const { data } = await api.post('/admin/threads/batch', { ids: [...selectedIds.value], action })
+    toast.success(`批量操作完成`)
+    selectedIds.value = []
+    await load(page.value)
+  } catch (e) { toast.error(e.message) }
 }
 
 load(1)
+watch(page, (p) => { if (p > 0) load(p) })
 </script>
 
 <style scoped>
@@ -183,4 +199,12 @@ load(1)
 .tag-ok { background: rgba(13,148,136,0.12); color: #0f766e; }
 .tag-essence { background: rgba(217,119,6,0.14); color: #b45309; }
 .search-bar { display: flex; gap: 6px; align-items: center; }
+.thread-link { color: #142033; text-decoration: none; }
+.thread-link:hover { color: #0d9488; text-decoration: underline; }
+.batch-bar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: #f0fdf4; border-bottom: 1px solid #bbf7d0;
+}
+.batch-count { font-size: 13px; font-weight: 600; color: #166534; }
+.admin-btn-sm { padding: 4px 10px; font-size: 12px; }
 </style>

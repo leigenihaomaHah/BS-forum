@@ -72,11 +72,11 @@ frontend/src/
   App.vue               # 根组件
   router/index.js       # 路由（懒加载），/admin 受 adminGuard() 保护
   api/http.js           # Axios 实例：baseURL /api，JWT 拦截器，错误规范化
-  stores/               # Pinia 状态管理（auth.js、authModal.js）
+  stores/               # Pinia 状态管理（auth.js、authModal.js、toast.js）
   views/                # 页面组件
-  components/           # 布局、面板、弹窗、通用组件
+  components/           # 布局、面板、弹窗、通用组件（PaginationComp.vue）
   config/               # levels.js、forumIcons.js
-  utils/                # markdown.js、password.js
+  utils/                # markdown.js、password.js、image.js、time.js、avatar.js
   assets/               # forum.css、admin.css、hero.png
 ```
 

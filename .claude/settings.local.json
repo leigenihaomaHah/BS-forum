@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(curl -s -X POST http://localhost:5000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'points: {d[\\\\\"points\\\\\"]}, coins: {d[\\\\\"coins\\\\\"]}'\\)\")",
+      "Bash(JWT_SECRET=\"ThisIsASecureJwtKeyForProduction_32Chars!!\" dotnet run)",
+      "Bash(curl -s http://localhost:5000/swagger/v1/swagger.json)",
+      "Bash(taskkill //F //IM dotnet.exe)",
+      "Bash(taskkill //F //IM ForumApi.exe)",
+      "Bash(dotnet build *)",
+      "Bash(curl -s http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"demo\",\"password\":\"demo123\"}')"
+    ]
+  }
+}

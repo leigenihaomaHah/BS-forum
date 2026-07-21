@@ -26,6 +26,15 @@
         </div>
       </div>
 
+      <div class="sort-bar">
+        <button
+          v-for="opt in sortOptions"
+          :key="opt.value"
+          class="sort-btn"
+          :class="{ active: sort === opt.value }"
+          @click="setSort(opt.value)"
+        >{{ opt.label }}</button>
+      </div>
       <div v-if="loading" class="p-3 text-muted">加载中...</div>
       <template v-else>
         <div v-if="!items.length" class="p-3 text-muted">暂无主题，来发第一帖吧</div>
@@ -42,13 +51,9 @@
             </div>
           </div>
           <div class="meta">{{ t.replyCount }} 回复 / {{ t.views }} 浏览</div>
-          <div class="meta">{{ formatTime(t.lastReplyAt) }}</div>
+          <div class="meta">{{ formatTime(t.lastReplyAt, false) }}</div>
         </div>
-        <div v-if="totalPages > 1" class="p-3 d-flex gap-2 justify-content-center">
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-          <span class="align-self-center text-muted">{{ page }} / {{ totalPages }}</span>
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
-        </div>
+        <PaginationComp v-model="page" :total-pages="totalPages" />
       </template>
     </div>
   </AppLayout>
@@ -59,10 +64,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
+import PaginationComp from '../components/PaginationComp.vue'
 import { useAuthStore } from '../stores/auth'
+import { useToastStore } from '../stores/toast'
+import { formatTime } from '../utils/time.js'
 
 const route = useRoute()
 const auth = useAuthStore()
+const toast = useToastStore()
 const forum = ref(null)
 const items = ref([])
 const page = ref(1)
@@ -71,13 +80,21 @@ const pageSize = 20
 const loading = ref(true)
 const subscribed = ref(false)
 const denied = ref('')
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const sort = ref('latest')
+const sortOptions = [
+  { value: 'latest', label: '最新回复' },
+  { value: 'newest', label: '最新发布' },
+  { value: 'hot', label: '最热' },
+  { value: 'essence', label: '精华' },
+  { value: 'replies', label: '最多回复' },
+]
 
-function formatTime(iso) {
-  const d = new Date(iso)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+function setSort(v) {
+  if (sort.value === v) return
+  sort.value = v
+  load(1)
 }
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
 async function loadSub(id) {
   if (!auth.isLoggedIn) {
@@ -99,7 +116,7 @@ async function toggleSub() {
     const { data } = await api.post(`/forums/${forum.value.id}/subscribe`)
     subscribed.value = !!data.subscribed
   } catch (e) {
-    alert(e.response?.data?.message || '操作失败')
+    toast.error(e.response?.data?.message || '操作失败')
   }
 }
 
@@ -113,7 +130,7 @@ async function load(p = 1) {
   try {
     const [f, t] = await Promise.all([
       api.get(`/forums/${id}`),
-      api.get(`/forums/${id}/threads`, { params: { page: p, pageSize } })
+      api.get(`/forums/${id}/threads`, { params: { page: p, pageSize, sort: sort.value } })
     ])
     forum.value = f.data
     items.value = t.data.items
@@ -133,6 +150,7 @@ async function load(p = 1) {
 
 onMounted(() => load(1))
 watch(() => route.params.id, () => load(1))
+watch(page, (p) => { if (p > 0) load(p) })
 </script>
 
 <style scoped>
@@ -163,6 +181,33 @@ watch(() => route.params.id, () => load(1))
   font-weight: 700;
   color: #142033;
   margin-bottom: 8px;
+}
+.sort-bar {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(20,32,51,0.08);
+  flex-wrap: wrap;
+}
+.sort-btn {
+  padding: 4px 12px;
+  border: 1px solid rgba(20,32,51,0.12);
+  border-radius: 6px;
+  background: #fff;
+  color: #5a6a85;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sort-btn:hover {
+  border-color: #0d9488;
+  color: #0d9488;
+}
+.sort-btn.active {
+  background: #0d9488;
+  border-color: #0d9488;
+  color: #fff;
 }
 .vip-denied-desc {
   color: #7a869c;

@@ -121,7 +121,14 @@
       BS Forum · .NET Core + Vue3 · 演示账号 admin / admin123
     </div>
 
-    <div v-if="notice" class="toast-notice">{{ notice }}</div>
+    <div class="toast-container">
+      <div
+        v-for="t in toast.items"
+        :key="t.id"
+        class="toast-notice"
+        :class="'toast-' + t.type"
+      >{{ t.msg }}</div>
+    </div>
   </div>
 </template>
 
@@ -130,27 +137,20 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 import api from '../api/http'
 import { getNextLevel, getLevelProgress, isAdminUser } from '../config/levels.js'
+import { timeAgo } from '../utils/time.js'
+import { defaultAvatar } from '../utils/avatar.js'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
-const notice = ref('')
+const toast = useToastStore()
 const searchQuery = ref('')
 const navCategories = ref([])
 const isAdmin = computed(() => isAdminUser(auth.user))
-
-function toast(msg) {
-  notice.value = msg
-  setTimeout(() => { notice.value = '' }, 2500)
-}
-
-function defaultAvatar(name) {
-  const n = encodeURIComponent((name || '?').slice(0, 1))
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${n}`
-}
 
 function scrollToCategory(id) {
   if (route.name !== 'home') {
@@ -168,24 +168,12 @@ const notifLoading = ref(false)
 const unreadCount = ref(0)
 let notifTimer = null
 
-function timeAgo(iso) {
-  if (!iso) return ''
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins} 分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  return `${days} 天前`
-}
-
-async function refreshUnread() {
+	async function refreshUnread() {
   if (!auth.isLoggedIn) return
   try {
     const { data } = await api.get('/me/notifications/summary')
     unreadCount.value = data.totalUnread
-  } catch {}
+  } catch { console.warn('refreshUnread failed') }
 }
 
 async function loadNotifications() {
@@ -197,7 +185,7 @@ async function loadNotifications() {
     ])
     notifications.value = listRes.data
     unreadCount.value = sumRes.data.totalUnread
-  } catch {}
+  } catch { console.warn('loadNotifications failed') }
 }
 
 async function toggleNotif() {
@@ -215,7 +203,7 @@ async function markRead(n) {
     await api.put(`/me/notifications/${n.id}/read`)
     n.read = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
-  } catch {}
+  } catch { console.warn('markRead failed') }
 }
 
 async function markAllRead() {
@@ -223,7 +211,7 @@ async function markAllRead() {
     await api.put('/me/notifications/read-all')
     notifications.value.forEach((n) => { n.read = true })
     unreadCount.value = 0
-  } catch {}
+  } catch { console.warn('markAllRead failed') }
 }
 
 function closeNotif(e) {
@@ -403,4 +391,31 @@ function doSearch() {
 .notif-item-body { font-size: 12px; color: #3d4a63; margin-top: 2px; }
 .notif-item-time { font-size: 11px; color: #7a869c; margin-top: 2px; }
 .ta-center { text-align: center; }
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast-notice {
+  pointer-events: auto;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+  animation: toast-in 0.25s ease;
+  background: #142033;
+  color: #fff;
+}
+.toast-error { background: #dc2626; color: #fff; }
+.toast-success { background: #059669; color: #fff; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 </style>

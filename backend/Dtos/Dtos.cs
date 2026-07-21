@@ -10,6 +10,7 @@ public record RegisterRequest(
 
 public record CaptchaDto(string CaptchaId, string ImageBase64);
 public record LoginRequest(string Username, string Password);
+public record ResetPasswordRequest(string Username, string Nickname, string NewPassword);
 public record UpdateSettingsRequest(string? Nickname, string? Password, string? Avatar);
 
 public record AuthResponse(
@@ -61,6 +62,7 @@ public record UserProfileDto(
     bool FollowedByMe);
 
 public record LevelRuleDto(
+    int Id,
     int Level,
     string Name,
     int MinPoints,
@@ -184,10 +186,23 @@ public record FavoriteResultDto(bool Favorited, string Message);
 
 public record FavoriteItemDto(
     int Id,
+    int ThreadId,
     string Title,
     string ForumName,
     int ReplyCount,
+    DateTime CreatedAt,
+    int? FolderId = null);
+
+public record FavoriteFolderDto(
+    int Id,
+    string Name,
+    int SortOrder,
+    int Count,
     DateTime CreatedAt);
+
+public record CreateFavoriteFolderRequest(string Name);
+public record UpdateFavoriteFolderRequest(string Name);
+public record MoveFavoriteRequest(int? FolderId);
 
 public record PurchaseHistoryDto(
     int ThreadId,
@@ -576,3 +591,20 @@ public record RechargeCardDto(
     string? UsedByNickname,
     DateTime? UsedAt,
     DateTime CreatedAt);
+
+public class UpdateLevelRequest
+{
+    public string? Name { get; set; }
+    public int? MinPoints { get; set; }
+}
+
+public record AdminTagDto(int Id, string Name, int Count);
+public record AdminPostDto(int Id, int ThreadId, string ThreadTitle, int Floor, string ContentPreview, int AuthorId, string AuthorNickname, int AuthorLevel, DateTime CreatedAt);
+public record RenameTagRequest(string Name);
+public record BatchThreadActionRequest(List<int> Ids, string Action);
+public record LedgerEntryDto(int Id, int UserId, string Nickname, int Delta, string Reason, string Type, string? RefType, int? RefId, DateTime CreatedAt);
+public record AdminInviteDto(int UserId, string Nickname, string Code, DateTime CreatedAt, int UsedCount);
+public record BroadcastNotificationRequest(string Content, int? UserId = null);
+public record AdminUpdateSettingsRequest(Dictionary<string, string> Settings);
+
+public record UploadResultDto(List<string> Urls);

@@ -58,7 +58,13 @@ if (!connStr.Contains("Mode=", StringComparison.OrdinalIgnoreCase))
     connStr += ";Mode=ReadWriteCreate";
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite(connStr));
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "BSForum_Dev_Secret_Key_AtLeast32Chars!!";
+var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["Jwt:Key"];
+if (string.IsNullOrEmpty(jwtKey) || jwtKey.Length < 32)
+{
+    Console.Error.WriteLine("FATAL: JWT_SECRET environment variable is not set or is too short (min 32 chars). Set JWT_SECRET and restart.");
+    Environment.Exit(1);
+    return;
+}
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
@@ -104,6 +110,7 @@ builder.Services.AddScoped<LotteryService>();
 builder.Services.AddScoped<CommunityService>();
 builder.Services.AddScoped<RetentionService>();
 builder.Services.AddScoped<RechargeService>();
+builder.Services.AddScoped<ImageMigrationService>();
 
 var app = builder.Build();
 
@@ -173,6 +180,9 @@ app.Use(async (ctx, next) =>
         await ctx.Response.WriteAsJsonAsync(new ForumApi.Dtos.ApiMessage(msg));
     }
 });
+
+var wwwroot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(Path.Combine(wwwroot, "uploads"));
 
 app.UseCors("Frontend");
 app.UseDefaultFiles();

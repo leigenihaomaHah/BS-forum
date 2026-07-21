@@ -70,21 +70,7 @@
         </tbody>
       </table>
       <div v-if="!items.length" class="p-3 text-muted">暂无用户</div>
-      <div class="admin-pagination">
-        <div class="pagination-info">共 {{ total }} 条</div>
-        <div class="pagination-ctrl">
-          <button :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
-        </div>
-        <div class="pagination-size">
-          <select v-model.number="pageSize" @change="load(1)">
-            <option :value="10">10条/页</option>
-            <option :value="20">20条/页</option>
-            <option :value="50">50条/页</option>
-          </select>
-        </div>
-      </div>
+      <PaginationComp v-model="page" :total-pages="totalPages" />
     </div>
 
     <div v-if="editing" class="modal-overlay" @click.self="editing = null">
@@ -140,9 +126,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../../api/http'
+import { useToastStore } from '../../stores/toast'
+import { defaultAvatar } from '../../utils/avatar.js'
+import PaginationComp from '../../components/PaginationComp.vue'
+
+const toast = useToastStore()
 
 const route = useRoute()
 const items = ref([])
@@ -168,9 +159,6 @@ function fmtTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-function defaultAvatar(name) {
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent((name || '?').slice(0, 1))}`
 }
 
 async function load(p) {
@@ -240,7 +228,7 @@ async function unmuteUser(u) {
   try {
     await api.post(`/admin/users/${u.id}/unmute`, {})
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 async function delUser(id) {
@@ -248,10 +236,11 @@ async function delUser(id) {
   try {
     await api.delete(`/admin/users/${id}`)
     await load(page.value)
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 load(1)
+watch(page, (p) => { if (p > 0) load(p) })
 </script>
 
 <style scoped>
@@ -263,12 +252,7 @@ load(1)
   margin-right: 4px;
   object-fit: cover;
 }
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
+
 .search-bar {
   display: flex;
   align-items: center;

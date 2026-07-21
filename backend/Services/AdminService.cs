@@ -695,4 +695,243 @@ public class AdminService
         });
         return Task.CompletedTask;
     }
+
+    public async Task<(LevelRuleDto? Result, string? Error)> UpdateLevelAsync(int id, UpdateLevelRequest req)
+    {
+        var rule = await _db.LevelRules.FindAsync(id);
+        if (rule == null) return (null, "等级规则不存在");
+
+        if (!string.IsNullOrWhiteSpace(req.Name))
+            rule.Name = req.Name.Trim();
+        if (req.MinPoints.HasValue)
+            rule.MinPoints = req.MinPoints.Value;
+
+        await _db.SaveChangesAsync();
+        _levels.InvalidateCache();
+
+        var rules = await _levels.GetRuleDtosAsync();
+        var updated = rules.FirstOrDefault(r => r.Level == rule.Level);
+        return (updated, null);
+    }
+
+    // ── Tags ──────────────────────────────────────────────
+
+    public async Task<List<AdminTagDto>> GetTagsAsync()
+    {
+        var tags = await _db.Tags
+            .Select(t => new { t.Id, t.Name, Count = t.ThreadTags.Count })
+            .OrderByDescending(t => t.Count)
+            .ToListAsync();
+        return tags.Select(t => new AdminTagDto(t.Id, t.Name, t.Count)).ToList();
+    }
+
+    public async Task<(bool Ok, string? Error)> RenameTagAsync(int id, string name)
+    {
+        var tag = await _db.Tags.FindAsync(id);
+        if (tag == null) return (false, "标签不存在");
+        tag.Name = name.Trim();
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteTagAsync(int id)
+    {
+        var tag = await _db.Tags.Include(t => t.ThreadTags).FirstOrDefaultAsync(t => t.Id == id);
+        if (tag == null) return (false, "标签不存在");
+        _db.ThreadTags.RemoveRange(tag.ThreadTags);
+        _db.Tags.Remove(tag);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    // ── Posts (Reply Management) ──────────────────────────
+
+    public async Task<PagedResult<AdminPostDto>> GetPostsAsync(int page, int pageSize, string? search)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var q = _db.Posts.Where(p => p.Floor > 1).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(p => p.Content.Contains(s) || p.Author.Nickname.Contains(s));
+        }
+        var total = await q.CountAsync();
+        var raw = await q.OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new { p.Id, p.ThreadId, ThreadTitle = p.Thread.Title, p.Floor, p.Content, p.AuthorId, AuthorNickname = p.Author.Nickname, AuthorLevel = p.Author.Level, p.CreatedAt })
+            .ToListAsync();
+        var items = raw.Select(p => new AdminPostDto(
+            p.Id, p.ThreadId, p.ThreadTitle, p.Floor,
+            string.IsNullOrEmpty(p.Content) ? "" : (p.Content.Length > 200 ? p.Content.Substring(0, 200) + "…" : p.Content),
+            p.AuthorId, p.AuthorNickname, p.AuthorLevel, p.CreatedAt))
+            .ToList();
+        return new PagedResult<AdminPostDto>(items, total, page, pageSize);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeletePostAsync(int id)
+    {
+        var post = await _db.Posts.Include(p => p.Thread).FirstOrDefaultAsync(p => p.Id == id);
+        if (post == null) return (false, "回复不存在");
+        if (post.Floor <= 1) return (false, "不能删除主题帖，请在帖子管理操作");
+        _db.Posts.Remove(post);
+        post.Thread.ReplyCount = Math.Max(0, post.Thread.ReplyCount - 1);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    // ── Notification Broadcast ──────────────────────────
+
+    public async Task<(bool Ok, string? Error)> BroadcastNotificationAsync(string content, int? userId = null)
+    {
+        if (string.IsNullOrWhiteSpace(content) || content.Length > 500)
+            return (false, "通知内容不能为空且不超过 500 字");
+        if (userId.HasValue)
+        {
+            _db.Notifications.Add(new Notification
+            {
+                UserId = userId.Value,
+                Type = "system",
+                ThreadId = 0,
+                ThreadTitle = "系统通知",
+                FromUserId = 0,
+                FromNickname = "系统",
+                Content = content.Trim(),
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            var allUserIds = await _db.Users.Where(u => !u.IsAdmin).Select(u => u.Id).ToListAsync();
+            foreach (var uid in allUserIds)
+            {
+                _db.Notifications.Add(new Notification
+                {
+                    UserId = uid,
+                    Type = "system",
+                    ThreadId = 0,
+                    ThreadTitle = "系统通知",
+                    FromUserId = 0,
+                    FromNickname = "系统",
+                    Content = content.Trim(),
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    // ── Points/Coins Ledger ──────────────────────────────
+
+    public async Task<PagedResult<LedgerEntryDto>> GetLedgerAsync(int? userId, string? type, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var results = new List<LedgerEntryDto>();
+
+        if (type == "coin" || type == null)
+        {
+            var q = _db.CoinLedgers.AsQueryable();
+            if (userId.HasValue) q = q.Where(l => l.UserId == userId.Value);
+            var total = await q.CountAsync();
+            var items = await q.OrderByDescending(l => l.CreatedAt)
+                .Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(l => new { l.Id, l.UserId, l.Delta, l.Reason, l.RefType, l.RefId, l.CreatedAt, Nickname = l.User.Nickname })
+                .ToListAsync();
+            results.AddRange(items.Select(l => new LedgerEntryDto(l.Id, l.UserId, l.Nickname, l.Delta, l.Reason, "coin", l.RefType, l.RefId, l.CreatedAt)));
+        }
+
+        if (type == "point" || type == null)
+        {
+            var q = _db.PointLedgers.AsQueryable();
+            if (userId.HasValue) q = q.Where(l => l.UserId == userId.Value);
+            var total = await q.CountAsync();
+            var items = await q.OrderByDescending(l => l.CreatedAt)
+                .Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(l => new { l.Id, l.UserId, l.Delta, l.Reason, l.RefType, l.RefId, l.CreatedAt, Nickname = l.User.Nickname })
+                .ToListAsync();
+            results.AddRange(items.Select(l => new LedgerEntryDto(l.Id, l.UserId, l.Nickname, l.Delta, l.Reason, "point", l.RefType, l.RefId, l.CreatedAt)));
+        }
+
+        return new PagedResult<LedgerEntryDto>(results.OrderByDescending(r => r.CreatedAt).ToList(), results.Count, page, pageSize);
+    }
+
+    // ── Invite Code Management ───────────────────────────
+
+    public async Task<List<AdminInviteDto>> GetInviteCodesAsync()
+    {
+        var users = await _db.Users
+            .Where(u => !string.IsNullOrEmpty(u.InviteCode))
+            .Select(u => new AdminInviteDto(u.Id, u.Nickname, u.InviteCode!, u.CreatedAt,
+                _db.Users.Count(i => i.InvitedByUserId == u.Id)))
+            .OrderByDescending(d => d.UsedCount)
+            .ToListAsync();
+        return users;
+    }
+
+    public async Task<string> RegenerateInviteCodeAsync(int userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) throw new InvalidOperationException("用户不存在");
+        user.InviteCode = GenerateInviteCode();
+        await _db.SaveChangesAsync();
+        return user.InviteCode;
+    }
+
+    private static string GenerateInviteCode()
+    {
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        var rand = Random.Shared;
+        return new string(Enumerable.Range(0, 6).Select(_ => chars[rand.Next(chars.Length)]).ToArray());
+    }
+
+    // ── Site Settings ────────────────────────────────────
+
+    public async Task<Dictionary<string, string>> GetSettingsAsync()
+    {
+        return await _db.SiteSettings
+            .Select(s => new { s.Key, s.Value })
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+    }
+
+    public async Task UpdateSettingsAsync(Dictionary<string, string> settings)
+    {
+        foreach (var (key, value) in settings)
+        {
+            var existing = await _db.SiteSettings.FirstOrDefaultAsync(s => s.Key == key);
+            if (existing != null)
+                existing.Value = value;
+            else
+                _db.SiteSettings.Add(new SiteSetting { Key = key, Value = value });
+        }
+        await _db.SaveChangesAsync();
+    }
+
+    // ── Data Export ──────────────────────────────────────
+
+    public async Task<string> ExportUsersCsvAsync()
+    {
+        var users = await _db.Users
+            .OrderByDescending(u => u.CreatedAt)
+            .Select(u => new { u.Id, u.Username, u.Nickname, u.Level, u.Points, u.Coins, u.IsAdmin, u.IsMuted, u.CreatedAt })
+            .ToListAsync();
+        var lines = new List<string> { "ID,用户名,昵称,等级,积分,金币,管理员,禁言,注册时间" };
+        lines.AddRange(users.Select(u => $"{u.Id},{EscapeCsv(u.Username)},{EscapeCsv(u.Nickname)},{u.Level},{u.Points},{u.Coins},{u.IsAdmin},{u.IsMuted},{u.CreatedAt:yyyy-MM-dd HH:mm:ss}"));
+        return string.Join("\n", lines);
+    }
+
+    public async Task<string> ExportThreadsCsvAsync()
+    {
+        var threads = await _db.Threads
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new { t.Id, t.Title, t.Type, t.Views, t.ReplyCount, t.LikeCount, t.CreatedAt, AuthorNickname = t.Author.Nickname, ForumName = t.Forum.Name })
+            .ToListAsync();
+        var lines = new List<string> { "ID,标题,类型,作者,版块,回复,浏览,点赞,创建时间" };
+        lines.AddRange(threads.Select(t => $"{t.Id},{EscapeCsv(t.Title)},{t.Type},{EscapeCsv(t.AuthorNickname)},{EscapeCsv(t.ForumName)},{t.ReplyCount},{t.Views},{t.LikeCount},{t.CreatedAt:yyyy-MM-dd HH:mm:ss}"));
+        return string.Join("\n", lines);
+    }
+
+    private static string EscapeCsv(string s) => s.Contains(',') || s.Contains('"') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
 }

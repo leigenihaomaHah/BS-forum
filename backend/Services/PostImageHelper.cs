@@ -22,7 +22,8 @@ public static class PostImageHelper
             var img = raw.Trim();
             if (!img.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
                 && !img.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                && !img.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                && !img.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                && !img.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
                 return (null, "图片格式无效，请上传 JPG/PNG/GIF");
             if (img.Length > MaxSingleLength)
                 return (null, "单张图片过大，请压缩后重试");

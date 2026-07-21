@@ -46,6 +46,7 @@ import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import api from '../api/http'
+import { defaultAvatar } from '../utils/avatar.js'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
@@ -56,11 +57,6 @@ const stats = ref({
   favorites: 0,
   unread: 0,
 })
-
-function defaultAvatar(name) {
-  const n = encodeURIComponent((name || '?').slice(0, 1))
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${n}`
-}
 
 const cards = computed(() => [
   {
@@ -89,10 +85,16 @@ const cards = computed(() => [
     stat: `${stats.value.subscriptions} 个版块`,
   },
   {
-    to: auth.user ? `/user/${auth.user.id}` : '/login',
+    to: '/me/favorites',
     title: '我的收藏',
-    desc: '在个人资料页查看收藏列表',
+    desc: '分类管理收藏的帖子',
     stat: `${stats.value.favorites} 个收藏`,
+  },
+  {
+    to: '/me/threads',
+    title: '我的帖子',
+    desc: '查看自己发布的所有主题',
+    stat: `${stats.value.myThreads} 篇帖子`,
   },
   {
     to: '/sign-in',
@@ -111,12 +113,13 @@ const cards = computed(() => [
 async function load() {
   if (!auth.isLoggedIn) return
   try {
-    const [d, h, s, f, n] = await Promise.all([
+    const [d, h, s, f, n, t] = await Promise.all([
       api.get('/me/drafts'),
       api.get('/me/history', { params: { take: 100 } }),
       api.get('/me/subscriptions'),
       api.get(`/users/${auth.user.id}/favorites`),
       api.get('/me/notifications/summary'),
+      api.get('/me/threads', { params: { page: 1, pageSize: 1 } }),
     ])
     stats.value = {
       drafts: d.data?.length || 0,
@@ -124,8 +127,9 @@ async function load() {
       subscriptions: s.data?.length || 0,
       favorites: f.data?.length || 0,
       unread: n.data?.totalUnread || 0,
+      myThreads: t.data?.total || 0,
     }
-  } catch {}
+  } catch { console.warn('loadStats failed') }
 }
 
 watch(() => auth.isLoggedIn, load)

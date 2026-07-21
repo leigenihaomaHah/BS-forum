@@ -66,6 +66,7 @@
             <button class="btn-outline-modern" :disabled="thread.likedByMe || thread.repliesLocked" @click="like">
               {{ thread.likedByMe ? '已赞' : '点赞' }}
             </button>
+            <button class="btn-outline-modern" @click="shareThread">分享</button>
           </div>
         </div>
       </div>
@@ -135,7 +136,7 @@
         </div>
       </div>
 
-      <div v-for="post in thread.posts" :key="post.id" class="post-card" :class="{ 'post-deleted': post.deleted }">
+      <div v-for="post in posts" :key="post.id" class="post-card" :class="{ 'post-deleted': post.deleted }">
         <div class="post-side">
           <router-link :to="`/user/${post.author.id}`">
             <img :src="post.author.avatar || defaultAvatar(post.author.nickname)" class="post-avatar" />
@@ -171,8 +172,7 @@
 
           <!-- Edit mode (reply) -->
           <template v-if="editingPost?.id === post.id && !(editingThread && post.floor === 1)">
-            <textarea v-model="editContent" class="form-control mb-1" rows="4"></textarea>
-            <div class="md-hint mb-2">{{ mdHint }}</div>
+            <MarkdownEditor v-model="editContent" class="mb-2" :compact="true" :rows="4" :hint="mdHint" />
             <div class="d-flex gap-2 mb-2">
               <button class="btn btn-forum btn-sm" :disabled="savingEdit" @click="saveEdit(post)">{{ savingEdit ? '保存中...' : '保存' }}</button>
               <button class="btn btn-outline-modern btn-sm" @click="cancelEdit">取消</button>
@@ -181,8 +181,7 @@
 
           <!-- Edit theme (floor 1) -->
           <template v-else-if="editingThread && post.floor === 1">
-            <textarea v-model="editThreadContent" class="form-control mb-1" rows="8"></textarea>
-            <div class="md-hint mb-2">{{ mdHint }}</div>
+            <MarkdownEditor v-model="editThreadContent" class="mb-2" :rows="6" :hint="mdHint" />
             <div v-if="editThreadError" class="text-danger mb-2" style="font-size:12px">{{ editThreadError }}</div>
             <div class="d-flex gap-2 mb-2">
               <button class="btn btn-forum btn-sm" :disabled="savingThread" @click="saveThread">{{ savingThread ? '保存中...' : '保存主题' }}</button>
@@ -230,6 +229,12 @@
         </div>
       </div>
 
+      <div v-if="postTotalPages > 1" class="p-3 d-flex gap-2 justify-content-center align-items-center">
+        <button class="btn btn-sm btn-outline-secondary" :disabled="postPage <= 1 || loadingPosts" @click="loadPosts(postPage - 1)">上一页</button>
+        <span class="text-muted" style="font-size:13px">{{ postPage }} / {{ postTotalPages }}（{{ postTotal }} 回复）</span>
+        <button class="btn btn-sm btn-outline-secondary" :disabled="postPage >= postTotalPages || loadingPosts" @click="loadPosts(postPage + 1)">下一页</button>
+      </div>
+
       <div v-if="!thread.repliesLocked" class="panel">
         <div class="panel-header"><span class="accent"></span>发表回复</div>
         <div class="p-3">
@@ -244,8 +249,7 @@
               引用 #{{ replyTo.floor }} {{ replyTo.author.nickname }}
               <button type="button" class="btn-link" @click="replyTo = null">取消</button>
             </div>
-            <textarea ref="replyTextarea" v-model="reply" class="form-control mb-1 reply-textarea" rows="4" placeholder="至少 5 个字… 可用 @昵称 提醒，支持 Markdown"></textarea>
-            <div class="md-hint mb-2">{{ mdHint }} · 纯文字至少 5 字</div>
+            <MarkdownEditor ref="replyTextarea" v-model="reply" class="mb-2" :compact="true" :rows="4" :hint="mdHint + ' · 纯文字至少 5 字'" placeholder="至少 5 个字… 可用 @昵称 提醒，支持 Markdown" />
 
             <div class="reply-images mb-2">
               <div class="reply-img-list">
@@ -281,21 +285,34 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import MarkdownBody from '../components/MarkdownBody.vue'
+import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 import { markdownHint } from '../utils/markdown.js'
+import { compressImage } from '../utils/image.js'
+import { uploadImages } from '../utils/upload.js'
+import { formatTime } from '../utils/time.js'
+import { defaultAvatar } from '../utils/avatar.js'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const toast = useToastStore()
 const thread = ref(null)
+const posts = ref([])
+const postPage = ref(1)
+const postTotal = ref(0)
+const postPageSize = 20
+const postTotalPages = computed(() => Math.max(1, Math.ceil(postTotal.value / postPageSize)))
 const loading = ref(true)
+const loadingPosts = ref(false)
 const vipDenied = ref('')
 const reply = ref('')
 const replyImages = ref([])
@@ -332,53 +349,10 @@ const tipError = ref('')
 const tipSuccess = ref('')
 const modBusy = ref(false)
 
-const AVATAR_COLORS = ['#0d9488','#0891b2','#2563eb','#7c3aed','#db2777','#dc2626','#ea580c','#ca8a04','#059669','#0284c7']
-
-function defaultAvatar(nickname) {
-  const initials = (nickname || '?').replace(/[^\w一-鿿]/g, '').slice(0, 2).toUpperCase() || '?'
-  const color = AVATAR_COLORS[[...(nickname || '?')].reduce((s, c) => s + c.charCodeAt(0), 0) % AVATAR_COLORS.length]
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
-    <rect width="80" height="80" rx="16" fill="${color}"/>
-    <text x="40" y="40" text-anchor="middle" dominant-baseline="central" fill="white" font-size="32" font-weight="700" font-family="sans-serif">${initials}</text>
-  </svg>`
-  return 'data:image/svg+xml,' + encodeURIComponent(svg)
-}
-
-function formatTime(iso) {
-  const d = new Date(iso)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 function openLightbox(images, idx) {
   lightboxImages.value = images
   lightboxIdx.value = idx
   lightboxOpen.value = true
-}
-
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxDim || height > maxDim) {
-          const ratio = Math.min(maxDim / width, maxDim / height)
-          width = Math.round(width * ratio)
-          height = Math.round(height * ratio)
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 function addReplyImages(e) {
@@ -396,13 +370,31 @@ function addReplyImages(e) {
   e.target.value = ''
 }
 
+async function loadPosts(p = 1) {
+  if (!thread.value || thread.value.restricted) return
+  loadingPosts.value = true
+  postPage.value = p
+  try {
+    const { data } = await api.get(`/threads/${route.params.id}/posts`, { params: { page: p, pageSize: postPageSize } })
+    posts.value = data.items || []
+    postTotal.value = data.total || 0
+  } catch {
+    posts.value = []
+    postTotal.value = 0
+  } finally {
+    loadingPosts.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   vipDenied.value = ''
+  posts.value = []
   try {
     const { data } = await api.get(`/threads/${route.params.id}`)
     thread.value = data
     favorited.value = !!data.favorited
+    if (!data.restricted) await loadPosts(1)
   } catch (e) {
     thread.value = null
     const msg = e.response?.data?.message || e.message || ''
@@ -429,7 +421,7 @@ function cancelEdit() {
 }
 
 function startEditThread() {
-  const first = thread.value?.posts?.find((p) => p.floor === 1)
+  const first = posts.value.find((p) => p.floor === 1)
   editingThread.value = true
   editThreadTitle.value = thread.value.title
   editThreadContent.value = first?.content || ''
@@ -450,7 +442,7 @@ async function saveThread() {
   }
   savingThread.value = true
   try {
-    const first = thread.value.posts.find((p) => p.floor === 1)
+    const first = posts.value.find((p) => p.floor === 1)
     const { data } = await api.put(`/threads/${route.params.id}`, {
       title: editThreadTitle.value,
       content: editThreadContent.value,
@@ -485,7 +477,7 @@ async function modAction(action) {
     }
     await load()
   } catch (e) {
-    alert(e.response?.data?.message || e.message || '操作失败')
+    toast.error(e.response?.data?.message || e.message || '操作失败')
   } finally {
     modBusy.value = false
   }
@@ -509,7 +501,7 @@ async function deletePost(post) {
   if (!confirm('确定删除此回复？')) return
   try {
     await api.delete(`/posts/${post.id}`)
-    thread.value.posts = thread.value.posts.filter((p) => p.id !== post.id)
+    posts.value = posts.value.filter((p) => p.id !== post.id)
     thread.value.replyCount = Math.max(0, thread.value.replyCount - 1)
   } catch (e) {
     error.value = e.message
@@ -539,7 +531,7 @@ async function vote(optionId) {
   try {
     const { data } = await api.post(`/threads/${route.params.id}/vote`, { optionId })
     thread.value.poll = data
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
   finally { voting.value = false }
 }
 
@@ -548,8 +540,8 @@ async function reportThread() {
   if (!reason) return
   try {
     await api.post('/reports', { targetType: 'thread', targetId: Number(route.params.id), reason })
-    alert('举报已提交')
-  } catch (e) { alert(e.message) }
+    toast.success('举报已提交')
+  } catch (e) { toast.error(e.message) }
 }
 
 async function submitReply() {
@@ -564,13 +556,23 @@ async function submitReply() {
     return
   }
   submitting.value = true
+  let images = []
+  if (replyImages.value.length > 0) {
+    try {
+      images = await uploadImages([...replyImages.value])
+    } catch (e) {
+      error.value = '图片上传失败：' + e.message
+      submitting.value = false
+      return
+    }
+  }
   try {
     const { data } = await api.post(`/threads/${route.params.id}/replies`, {
       content: reply.value,
-      images: replyImages.value,
+      images,
       replyToPostId: replyTo.value?.id || null,
     })
-    thread.value.posts.push(data)
+    posts.value.push(data)
     thread.value.replyCount += 1
     reply.value = ''
     replyImages.value = []
@@ -636,6 +638,19 @@ async function like() {
     thread.value.likeCount += 1
   } catch (e) {
     error.value = e.message
+  }
+}
+
+function shareThread() {
+  const url = window.location.origin + '/thread/' + route.params.id
+  if (navigator.share) {
+    navigator.share({ title: thread.value?.title || '', url }).catch(() => {})
+  } else {
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success('链接已复制到剪贴板')
+    }).catch(() => {
+      toast.error('复制失败，请手动复制地址栏链接')
+    })
   }
 }
 

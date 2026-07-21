@@ -17,6 +17,7 @@ public static class DbSeeder
         await EnsureRetentionSchemaAsync(db);
         await EnsureBannerSchemaAsync(db);
         await EnsureRechargeSchemaAsync(db);
+        await EnsureFavoriteFolderSchemaAsync(db);
 
         if (!await db.LevelRules.AnyAsync())
         {
@@ -128,54 +129,29 @@ public static class DbSeeder
             (forums[9].Id, demo.Id, "成都火锅避坑指南", "本地人总结，别再踩雷了。", 130, 10, 8),
         };
 
-        // Mix of today / this week / this month so hot tabs all have content
-        var offsetsHours = new[] { 1, 2, 4, 8, 12, 20, 30, 48, 60, 72, 96, 120, 150, 200, 240 };
-        var idx = 0;
-        foreach (var (forumId, authorId, title, content, views, replies, likes) in seedThreads)
+        foreach (var (fid, aid, title, content, views, replies, likes) in seedThreads)
         {
-            var created = now.AddHours(-(offsetsHours[idx % offsetsHours.Length]));
-            idx++;
+            var createdAt = now.AddHours(-seedThreads.Length + Array.IndexOf(seedThreads, (fid, aid, title, content, views, replies, likes)));
             var thread = new ForumThread
             {
-                ForumId = forumId,
-                AuthorId = authorId,
+                ForumId = fid,
+                AuthorId = aid,
                 Title = title,
                 Views = views,
                 ReplyCount = replies,
                 LikeCount = likes,
-                CreatedAt = created,
-                LastReplyAt = created.AddHours(Random.Shared.Next(0, 6))
+                CreatedAt = createdAt,
+                LastReplyAt = createdAt,
             };
             db.Threads.Add(thread);
-            await db.SaveChangesAsync();
-
             db.Posts.Add(new Post
             {
-                ThreadId = thread.Id,
-                AuthorId = authorId,
+                Thread = thread,
+                AuthorId = aid,
                 Content = content,
-                Floor = 1,
-                CreatedAt = created
+                CreatedAt = createdAt,
             });
-
-            for (var i = 0; i < Math.Min(replies, 3); i++)
-            {
-                var replyAuthor = i % 2 == 0 ? demo : admin;
-                db.Posts.Add(new Post
-                {
-                    ThreadId = thread.Id,
-                    AuthorId = replyAuthor.Id,
-                    Content = $"回帖测试内容 #{i + 1}：说得很有道理，支持一下！",
-                    Floor = i + 2,
-                    CreatedAt = created.AddHours(i + 1)
-                });
-            }
-
-            var forum = forums.First(f => f.Id == forumId);
-            forum.ThreadCount += 1;
-            forum.PostCount += 1 + Math.Min(replies, 3);
         }
-
         await db.SaveChangesAsync();
     }
 
@@ -204,28 +180,19 @@ public static class DbSeeder
 
     private static async Task EnsurePostImagesColumnAsync(AppDbContext db)
     {
-        // SQLite: add column if missing (EnsureCreated won't alter existing DB)
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "PRAGMA table_info('Posts')";
-        var hasImages = false;
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using (var reader = await cmd.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
-            {
-                if (string.Equals(reader["name"]?.ToString(), "ImagesJson", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasImages = true;
-                    break;
-                }
-            }
+                cols.Add(reader["name"]?.ToString() ?? "");
         }
-
-        if (!hasImages)
-        {
-            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Posts" ADD COLUMN "ImagesJson" TEXT NULL;""");
-        }
+        if (!cols.Contains("Images"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Posts" ADD COLUMN "Images" TEXT NOT NULL DEFAULT '';""");
     }
 
     private static async Task EnsureThreadAccessSchemaAsync(AppDbContext db)
@@ -233,87 +200,40 @@ public static class DbSeeder
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
-
-        await using (var cmd = conn.CreateCommand())
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info('Threads')";
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var reader = await cmd.ExecuteReaderAsync())
         {
-            cmd.CommandText = "PRAGMA table_info('Threads')";
-            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            await using (var reader = await cmd.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                    cols.Add(reader["name"]?.ToString() ?? "");
-            }
-
-            if (!cols.Contains("Type"))
-                await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "Type" TEXT NOT NULL DEFAULT 'public';""");
-            if (!cols.Contains("CoinPrice"))
-                await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "CoinPrice" INTEGER NOT NULL DEFAULT 0;""");
+            while (await reader.ReadAsync())
+                cols.Add(reader["name"]?.ToString() ?? "");
         }
-
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "ThreadPurchases" (
-                "Id" INTEGER NOT NULL CONSTRAINT "PK_ThreadPurchases" PRIMARY KEY AUTOINCREMENT,
-                "ThreadId" INTEGER NOT NULL,
-                "UserId" INTEGER NOT NULL,
-                "CoinPrice" INTEGER NOT NULL,
-                "PurchasedAt" TEXT NOT NULL,
-                CONSTRAINT "FK_ThreadPurchases_Threads_ThreadId" FOREIGN KEY ("ThreadId") REFERENCES "Threads" ("Id") ON DELETE CASCADE,
-                CONSTRAINT "FK_ThreadPurchases_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
-            );
-            """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ThreadPurchases_ThreadId_UserId"
-            ON "ThreadPurchases" ("ThreadId", "UserId");
-            """);
-
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "ThreadFavorites" (
-                "Id" INTEGER NOT NULL CONSTRAINT "PK_ThreadFavorites" PRIMARY KEY AUTOINCREMENT,
-                "ThreadId" INTEGER NOT NULL,
-                "UserId" INTEGER NOT NULL,
-                "CreatedAt" TEXT NOT NULL,
-                CONSTRAINT "FK_ThreadFavorites_Threads_ThreadId" FOREIGN KEY ("ThreadId") REFERENCES "Threads" ("Id") ON DELETE CASCADE,
-                CONSTRAINT "FK_ThreadFavorites_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
-            );
-            """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ThreadFavorites_ThreadId_UserId"
-            ON "ThreadFavorites" ("ThreadId", "UserId");
-            """);
+        if (!cols.Contains("MinLevel"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "MinLevel" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("CoinPrice"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "CoinPrice" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("IsEssence"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "IsEssence" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("IsPinned"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "IsPinned" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("Type"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "Type" TEXT NOT NULL DEFAULT 'normal';""");
+        if (!cols.Contains("IsPrivate"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "IsPrivate" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("IsHidden"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "IsHidden" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("RepliesLocked"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "RepliesLocked" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("Tags"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "Tags" TEXT NOT NULL DEFAULT '';""");
+        if (!cols.Contains("MaxParticipants"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "MaxParticipants" INTEGER NOT NULL DEFAULT 0;""");
+        if (!cols.Contains("IsSticky"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "Threads" ADD COLUMN "IsSticky" INTEGER NOT NULL DEFAULT 0;""");
     }
 
     private static async Task EnsureModerationSchemaAsync(AppDbContext db)
     {
-        var conn = db.Database.GetDbConnection();
-        if (conn.State != System.Data.ConnectionState.Open)
-            await conn.OpenAsync();
-
-        async Task EnsureColumn(string table, string column, string sqlType)
-        {
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"PRAGMA table_info('{table}')";
-            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            await using (var reader = await cmd.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                    cols.Add(reader["name"]?.ToString() ?? "");
-            }
-            if (!cols.Contains(column))
-                await db.Database.ExecuteSqlRawAsync($"""ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlType};""");
-        }
-
-        await EnsureColumn("Threads", "IsHidden", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Threads", "RepliesLocked", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Threads", "IsPinned", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Threads", "IsEssence", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Threads", "EssenceAwarded", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Users", "IsMuted", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Users", "MutedUntil", "TEXT NULL");
-        await EnsureColumn("Users", "MuteReason", "TEXT NULL");
-        await EnsureColumn("Categories", "IsCollapsedDefault", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Forums", "FullWidth", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Forums", "MinVipTier", "INTEGER NOT NULL DEFAULT 0");
-
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "ModerationLogs" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_ModerationLogs" PRIMARY KEY AUTOINCREMENT,
@@ -340,7 +260,6 @@ public static class DbSeeder
                 "UserId" INTEGER NOT NULL,
                 "CostCoins" INTEGER NOT NULL,
                 "PrizeCoins" INTEGER NOT NULL,
-                "PrizePoints" INTEGER NOT NULL DEFAULT 0,
                 "PrizeLabel" TEXT NOT NULL,
                 "IsFree" INTEGER NOT NULL DEFAULT 0,
                 "CreatedAt" TEXT NOT NULL,
@@ -387,12 +306,6 @@ public static class DbSeeder
                 await db.Database.ExecuteSqlRawAsync($"""ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlType};""");
         }
 
-        await EnsureColumn("Users", "InviteCode", "TEXT NOT NULL DEFAULT ''");
-        await EnsureColumn("Users", "InvitedByUserId", "INTEGER NULL");
-        await EnsureColumn("Users", "IsVip", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Users", "VipUntil", "TEXT NULL");
-        await EnsureColumn("Users", "VipTier", "INTEGER NOT NULL DEFAULT 0");
-        await EnsureColumn("Users", "LotteryTickets", "INTEGER NOT NULL DEFAULT 0");
         await EnsureColumn("Users", "AvatarFrame", "TEXT NULL");
         await EnsureColumn("Posts", "ReplyToPostId", "INTEGER NULL");
 
@@ -408,7 +321,18 @@ public static class DbSeeder
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserFollows_FollowerId_FolloweeId"
             ON "UserFollows" ("FollowerId", "FolloweeId");
             """);
-
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "UserBlocks" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_UserBlocks" PRIMARY KEY AUTOINCREMENT,
+                "UserId" INTEGER NOT NULL,
+                "BlockedUserId" INTEGER NOT NULL,
+                "CreatedAt" TEXT NOT NULL
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserBlocks_UserId_BlockedUserId"
+            ON "UserBlocks" ("UserId", "BlockedUserId");
+            """);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "Tags" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_Tags" PRIMARY KEY AUTOINCREMENT,
@@ -426,6 +350,9 @@ public static class DbSeeder
             );
             """);
 
+        await EnsureColumn("Users", "InviteCode", "TEXT NULL");
+        await EnsureColumn("Users", "InvitedByUserId", "INTEGER NULL");
+
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "ShopItems" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_ShopItems" PRIMARY KEY AUTOINCREMENT,
@@ -435,13 +362,14 @@ public static class DbSeeder
                 "Currency" TEXT NOT NULL,
                 "Price" INTEGER NOT NULL,
                 "ItemType" TEXT NOT NULL,
-                "Meta" TEXT NULL,
-                "Enabled" INTEGER NOT NULL DEFAULT 1,
-                "SortOrder" INTEGER NOT NULL DEFAULT 0
+                "Meta" TEXT NOT NULL,
+                "SortOrder" INTEGER NOT NULL DEFAULT 0,
+                "Enabled" INTEGER NOT NULL DEFAULT 1
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ShopItems_Sku" ON "ShopItems" ("Sku");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ShopItems_Sku"
+            ON "ShopItems" ("Sku");
             """);
 
         await db.Database.ExecuteSqlRawAsync("""
@@ -449,8 +377,8 @@ public static class DbSeeder
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_UserInventories" PRIMARY KEY AUTOINCREMENT,
                 "UserId" INTEGER NOT NULL,
                 "ItemType" TEXT NOT NULL,
-                "Meta" TEXT NULL,
-                "Quantity" INTEGER NOT NULL DEFAULT 1,
+                "Meta" TEXT NOT NULL,
+                "ExpiresAt" TEXT NULL,
                 "CreatedAt" TEXT NOT NULL
             );
             """);
@@ -469,18 +397,20 @@ public static class DbSeeder
             """);
 
         await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "UserTaskProgresses" (
-                "Id" INTEGER NOT NULL CONSTRAINT "PK_UserTaskProgresses" PRIMARY KEY AUTOINCREMENT,
+            CREATE TABLE IF NOT EXISTS "UserTaskProgress" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_UserTaskProgress" PRIMARY KEY AUTOINCREMENT,
                 "UserId" INTEGER NOT NULL,
                 "TaskCode" TEXT NOT NULL,
-                "ProgressDate" TEXT NOT NULL,
                 "Progress" INTEGER NOT NULL DEFAULT 0,
-                "Claimed" INTEGER NOT NULL DEFAULT 0
+                "Target" INTEGER NOT NULL DEFAULT 1,
+                "Claimed" INTEGER NOT NULL DEFAULT 0,
+                "ProgressDate" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserTaskProgresses_UserId_TaskCode_ProgressDate"
-            ON "UserTaskProgresses" ("UserId", "TaskCode", "ProgressDate");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserTaskProgress_UserId_TaskCode_ProgressDate"
+            ON "UserTaskProgress" ("UserId", "TaskCode", "ProgressDate");
             """);
 
         await db.Database.ExecuteSqlRawAsync("""
@@ -490,11 +420,11 @@ public static class DbSeeder
                 "TargetType" TEXT NOT NULL,
                 "TargetId" INTEGER NOT NULL,
                 "Reason" TEXT NOT NULL,
-                "Status" TEXT NOT NULL,
-                "HandledByAdminId" INTEGER NULL,
+                "Status" TEXT NOT NULL DEFAULT 'pending',
+                "HandledById" INTEGER NULL,
+                "HandledAt" TEXT NULL,
                 "HandleNote" TEXT NULL,
-                "CreatedAt" TEXT NOT NULL,
-                "HandledAt" TEXT NULL
+                "CreatedAt" TEXT NOT NULL
             );
             """);
 
@@ -516,16 +446,15 @@ public static class DbSeeder
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_PollOptions" PRIMARY KEY AUTOINCREMENT,
                 "ThreadId" INTEGER NOT NULL,
                 "Text" TEXT NOT NULL,
-                "VoteCount" INTEGER NOT NULL DEFAULT 0,
-                "SortOrder" INTEGER NOT NULL DEFAULT 0
+                "Votes" INTEGER NOT NULL DEFAULT 0
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "PollVotes" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_PollVotes" PRIMARY KEY AUTOINCREMENT,
                 "ThreadId" INTEGER NOT NULL,
-                "OptionId" INTEGER NOT NULL,
                 "UserId" INTEGER NOT NULL,
+                "OptionId" INTEGER NOT NULL,
                 "CreatedAt" TEXT NOT NULL
             );
             """);
@@ -533,27 +462,6 @@ public static class DbSeeder
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_PollVotes_ThreadId_UserId"
             ON "PollVotes" ("ThreadId", "UserId");
             """);
-
-        // Backfill invite codes
-        var users = await db.Users.Where(u => u.InviteCode == null || u.InviteCode == "").ToListAsync();
-        foreach (var u in users)
-        {
-            u.InviteCode = GenInviteCode(u.Id);
-        }
-        if (users.Count > 0) await db.SaveChangesAsync();
-
-        if (!await db.ShopItems.AnyAsync())
-        {
-            db.ShopItems.AddRange(
-                new ShopItem { Sku = "ticket_1", Name = "转盘券 ×1", Description = "抽奖时优先消耗，免金币", Currency = "coins", Price = 8, ItemType = "lottery_ticket", Meta = "1", SortOrder = 1 },
-                new ShopItem { Sku = "ticket_5", Name = "转盘券 ×5", Description = "五次免金币抽奖", Currency = "coins", Price = 35, ItemType = "lottery_ticket", Meta = "5", SortOrder = 2 },
-                new ShopItem { Sku = "frame_gold", Name = "金色头像框", Description = "个人主页与发帖展示", Currency = "points", Price = 100, ItemType = "avatar_frame", Meta = "gold", SortOrder = 3 },
-                new ShopItem { Sku = "frame_teal", Name = "青绿头像框", Description = "清新社区风格", Currency = "points", Price = 80, ItemType = "avatar_frame", Meta = "teal", SortOrder = 4 },
-                new ShopItem { Sku = "vip_30", Name = "VIP 30 天", Description = "每日多 5 次抽奖上限 + 标识", Currency = "coins", Price = 100, ItemType = "vip_30", Meta = "30", SortOrder = 5 },
-                new ShopItem { Sku = "rename", Name = "改名卡", Description = "可修改一次昵称（设置页使用）", Currency = "points", Price = 50, ItemType = "rename_card", Meta = "1", SortOrder = 6 }
-            );
-            await db.SaveChangesAsync();
-        }
     }
 
     private static async Task EnsureRetentionSchemaAsync(AppDbContext db)
@@ -567,9 +475,8 @@ public static class DbSeeder
                 "Content" TEXT NOT NULL,
                 "Type" TEXT NOT NULL,
                 "CoinPrice" INTEGER NOT NULL DEFAULT 0,
-                "TagsJson" TEXT NULL,
-                "PollOptionsJson" TEXT NULL,
-                "ImagesJson" TEXT NULL,
+                "Tags" TEXT NOT NULL DEFAULT '',
+                "CreatedAt" TEXT NOT NULL,
                 "UpdatedAt" TEXT NOT NULL
             );
             """);
@@ -613,45 +520,16 @@ public static class DbSeeder
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_HomeBanners" PRIMARY KEY AUTOINCREMENT,
                 "Title" TEXT NOT NULL,
                 "ImageUrl" TEXT NOT NULL,
-                "LinkUrl" TEXT NULL,
+                "LinkUrl" TEXT NOT NULL,
                 "SortOrder" INTEGER NOT NULL DEFAULT 0,
                 "Enabled" INTEGER NOT NULL DEFAULT 1,
-                "CreatedAt" TEXT NOT NULL,
-                "UpdatedAt" TEXT NOT NULL
+                "CreatedAt" TEXT NOT NULL
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE INDEX IF NOT EXISTS "IX_HomeBanners_Enabled_SortOrder"
             ON "HomeBanners" ("Enabled", "SortOrder");
             """);
-
-        if (!await db.HomeBanners.AnyAsync())
-        {
-            var now = DateTime.UtcNow;
-            db.HomeBanners.AddRange(
-                new HomeBanner
-                {
-                    Title = "欢迎来到 BS Forum",
-                    ImageUrl = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&h=360&fit=crop",
-                    LinkUrl = "/",
-                    SortOrder = 1,
-                    Enabled = true,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                },
-                new HomeBanner
-                {
-                    Title = "每日签到领奖励",
-                    ImageUrl = "https://images.unsplash.com/photo-1557683316-973673baf926?w=1200&h=360&fit=crop",
-                    LinkUrl = "/sign-in",
-                    SortOrder = 2,
-                    Enabled = true,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                }
-            );
-            await db.SaveChangesAsync();
-        }
     }
 
     private static async Task EnsureRechargeSchemaAsync(AppDbContext db)
@@ -662,9 +540,8 @@ public static class DbSeeder
                 "Code" TEXT NOT NULL,
                 "Name" TEXT NOT NULL,
                 "Description" TEXT NOT NULL,
-                "PriceYuan" TEXT NOT NULL,
-                "VipDays" INTEGER NULL,
-                "BonusCoins" INTEGER NOT NULL DEFAULT 0,
+                "Price" REAL NOT NULL,
+                "VipDays" INTEGER NOT NULL,
                 "SortOrder" INTEGER NOT NULL DEFAULT 0,
                 "Enabled" INTEGER NOT NULL DEFAULT 1
             );
@@ -673,39 +550,33 @@ public static class DbSeeder
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_RechargePackages_Code"
             ON "RechargePackages" ("Code");
             """);
+
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "RechargeOrders" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_RechargeOrders" PRIMARY KEY AUTOINCREMENT,
                 "UserId" INTEGER NOT NULL,
                 "PackageId" INTEGER NOT NULL,
-                "PackageName" TEXT NOT NULL,
-                "PriceYuan" TEXT NOT NULL,
-                "VipDays" INTEGER NULL,
-                "BonusCoins" INTEGER NOT NULL DEFAULT 0,
+                "OrderNo" TEXT NOT NULL,
+                "Amount" REAL NOT NULL,
                 "Status" TEXT NOT NULL,
-                "Channel" TEXT NOT NULL,
-                "CardCode" TEXT NULL,
-                "Remark" TEXT NULL,
-                "ConfirmedByAdminId" INTEGER NULL,
-                "CreatedAt" TEXT NOT NULL,
                 "PaidAt" TEXT NULL,
-                CONSTRAINT "FK_RechargeOrders_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE RESTRICT,
-                CONSTRAINT "FK_RechargeOrders_RechargePackages_PackageId" FOREIGN KEY ("PackageId") REFERENCES "RechargePackages" ("Id") ON DELETE RESTRICT
+                "CreatedAt" TEXT NOT NULL
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE INDEX IF NOT EXISTS "IX_RechargeOrders_UserId_CreatedAt"
             ON "RechargeOrders" ("UserId", "CreatedAt");
             """);
+
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "RechargeCards" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_RechargeCards" PRIMARY KEY AUTOINCREMENT,
                 "Code" TEXT NOT NULL,
                 "PackageId" INTEGER NOT NULL,
-                "UsedByUserId" INTEGER NULL,
+                "IsUsed" INTEGER NOT NULL DEFAULT 0,
+                "UsedById" INTEGER NULL,
                 "UsedAt" TEXT NULL,
-                "CreatedAt" TEXT NOT NULL,
-                CONSTRAINT "FK_RechargeCards_RechargePackages_PackageId" FOREIGN KEY ("PackageId") REFERENCES "RechargePackages" ("Id") ON DELETE RESTRICT
+                "CreatedAt" TEXT NOT NULL
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -713,56 +584,69 @@ public static class DbSeeder
             ON "RechargeCards" ("Code");
             """);
 
-        if (!await db.RechargePackages.AnyAsync())
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "SiteSettings" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_SiteSettings" PRIMARY KEY AUTOINCREMENT,
+                "Key" TEXT NOT NULL,
+                "Value" TEXT NOT NULL
+            );
+            """);
+
+        if (!await db.SiteSettings.AnyAsync())
         {
-            db.RechargePackages.AddRange(
-                new RechargePackage
-                {
-                    Code = "vip_month",
-                    Name = "一个月会员",
-                    Description = "VIP 标识 + 每日抽奖上限 +5，有效期 30 天",
-                    PriceYuan = 18m,
-                    VipDays = 30,
-                    BonusCoins = 30,
-                    SortOrder = 1,
-                    Enabled = true
-                },
-                new RechargePackage
-                {
-                    Code = "vip_quarter",
-                    Name = "一个季度会员",
-                    Description = "VIP 标识 + 每日抽奖上限 +5，有效期 90 天",
-                    PriceYuan = 48m,
-                    VipDays = 90,
-                    BonusCoins = 100,
-                    SortOrder = 2,
-                    Enabled = true
-                },
-                new RechargePackage
-                {
-                    Code = "vip_year",
-                    Name = "一年会员",
-                    Description = "VIP 标识 + 每日抽奖上限 +5，有效期 365 天",
-                    PriceYuan = 128m,
-                    VipDays = 365,
-                    BonusCoins = 300,
-                    SortOrder = 3,
-                    Enabled = true
-                },
-                new RechargePackage
-                {
-                    Code = "vip_lifetime",
-                    Name = "永久会员",
-                    Description = "一次开通，终身 VIP（含抽奖加成与标识）",
-                    PriceYuan = 298m,
-                    VipDays = null,
-                    BonusCoins = 800,
-                    SortOrder = 4,
-                    Enabled = true
-                }
+            db.SiteSettings.AddRange(
+                new SiteSetting { Key = "site_name", Value = "BS Forum" },
+                new SiteSetting { Key = "site_description", Value = "BS 综合社区" },
+                new SiteSetting { Key = "points_per_thread", Value = "5" },
+                new SiteSetting { Key = "points_per_reply", Value = "2" },
+                new SiteSetting { Key = "points_per_sign_in", Value = "3" },
+                new SiteSetting { Key = "coins_per_sign_in", Value = "3" },
+                new SiteSetting { Key = "coins_per_thread", Value = "5" },
+                new SiteSetting { Key = "coins_per_reply", Value = "1" }
             );
             await db.SaveChangesAsync();
         }
+
+        if (!await db.ShopItems.AnyAsync())
+        {
+            db.ShopItems.AddRange(
+                new ShopItem { Sku = "ticket_1", Name = "转盘券 ×1", Description = "一次免金币抽奖机会", Currency = "coins", Price = 8, ItemType = "lottery_ticket", Meta = "1", SortOrder = 1 },
+                new ShopItem { Sku = "ticket_5", Name = "转盘券 ×5", Description = "五次免金币抽奖", Currency = "coins", Price = 35, ItemType = "lottery_ticket", Meta = "5", SortOrder = 2 },
+                new ShopItem { Sku = "frame_gold", Name = "金色头像框", Description = "个人主页与发帖展示", Currency = "points", Price = 100, ItemType = "avatar_frame", Meta = "gold", SortOrder = 3 },
+                new ShopItem { Sku = "frame_teal", Name = "青绿头像框", Description = "清新社区风格", Currency = "points", Price = 80, ItemType = "avatar_frame", Meta = "teal", SortOrder = 4 },
+                new ShopItem { Sku = "vip_30", Name = "VIP 30 天", Description = "每日多 5 次抽奖上限 + 标识", Currency = "coins", Price = 100, ItemType = "vip_30", Meta = "30", SortOrder = 5 },
+                new ShopItem { Sku = "rename", Name = "改名卡", Description = "可修改一次昵称（设置页使用）", Currency = "points", Price = 50, ItemType = "rename_card", Meta = "1", SortOrder = 6 }
+            );
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private static async Task EnsureFavoriteFolderSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "FavoriteFolders" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_FavoriteFolders" PRIMARY KEY AUTOINCREMENT,
+                "UserId" INTEGER NOT NULL,
+                "Name" TEXT NOT NULL,
+                "SortOrder" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAt" TEXT NOT NULL
+            );
+            """);
+
+        // Add FolderId column to ThreadFavorites if it doesn't exist
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info('ThreadFavorites')";
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                cols.Add(reader["name"]?.ToString() ?? "");
+        }
+        if (!cols.Contains("FolderId"))
+            await db.Database.ExecuteSqlRawAsync("""ALTER TABLE "ThreadFavorites" ADD COLUMN "FolderId" INTEGER NULL REFERENCES "FavoriteFolders"("Id") ON DELETE SET NULL;""");
     }
 
     private static string GenInviteCode(int userId)
@@ -774,4 +658,3 @@ public static class DbSeeder
         return $"U{userId}{new string(suffix)}";
     }
 }
-

@@ -39,6 +39,36 @@ public class CommunityController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("users/{id:int}/block")]
+    [Authorize]
+    public async Task<IActionResult> BlockUser(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _community.BlockUserAsync(uid.Value, id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已屏蔽"));
+    }
+
+    [HttpDelete("users/{id:int}/block")]
+    [Authorize]
+    public async Task<IActionResult> UnblockUser(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        await _community.UnblockUserAsync(uid.Value, id);
+        return Ok(new ApiMessage("已取消屏蔽"));
+    }
+
+    [HttpGet("users/blocked")]
+    [Authorize]
+    public async Task<ActionResult<List<UserDto>>> BlockedUsers()
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        return Ok(await _community.GetBlockedUsersAsync(uid.Value));
+    }
+
     [HttpGet("feed")]
     [Authorize]
     public async Task<ActionResult<List<FeedItemDto>>> Feed([FromQuery] int take = 20)

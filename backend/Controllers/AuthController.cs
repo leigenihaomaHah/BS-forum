@@ -1,8 +1,11 @@
+using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
+using ForumApi.Models;
 using ForumApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ForumApi.Controllers;
 
@@ -41,6 +44,14 @@ public class AuthController : ControllerBase
         if (error != null) return BadRequest(new ApiMessage(error));
         return Ok(result);
     }
+
+    [HttpPost("reset-password")]
+    public async Task<ActionResult<ApiMessage>> ResetPassword([FromBody] ResetPasswordRequest req)
+    {
+        var (ok, error) = await _auth.ResetPasswordAsync(req);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("密码已重置，请使用新密码登录"));
+    }
 }
 
 [ApiController]
@@ -49,11 +60,13 @@ public class AuthController : ControllerBase
 public class MeController : ControllerBase
 {
     private readonly AuthService _auth;
+    private readonly ThreadService _threads;
     private readonly NotificationService _notifications;
 
-    public MeController(AuthService auth, NotificationService notifications)
+    public MeController(AuthService auth, ThreadService threads, NotificationService notifications)
     {
         _auth = auth;
+        _threads = threads;
         _notifications = notifications;
     }
 
@@ -121,6 +134,14 @@ public class MeController : ControllerBase
         return Ok(new ApiMessage("已标记为已读"));
     }
 
+    [HttpGet("threads")]
+    public async Task<ActionResult<PagedResult<ThreadListItemDto>>> MyThreads([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        return Ok(await _threads.GetMyThreadsAsync(uid.Value, page, pageSize));
+    }
+
     [HttpPut("notifications/read-all")]
     public async Task<ActionResult<ApiMessage>> MarkAllNotificationsRead([FromQuery] string? type = null)
     {
@@ -128,6 +149,64 @@ public class MeController : ControllerBase
         if (uid == null) return Unauthorized();
         var n = await _notifications.MarkAllReadAsync(uid.Value, type);
         return Ok(new ApiMessage($"已标记 {n} 条为已读"));
+    }
+
+    // ── Favorite folders ──
+
+    [HttpGet("favorite-folders")]
+    public async Task<ActionResult<List<FavoriteFolderDto>>> FavoriteFolders()
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        return Ok(await _threads.GetFavoriteFoldersAsync(uid.Value));
+    }
+
+    [HttpPost("favorite-folders")]
+    public async Task<ActionResult<FavoriteFolderDto>> CreateFavoriteFolder([FromBody] CreateFavoriteFolderRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (result, error) = await _threads.CreateFavoriteFolderAsync(uid.Value, req.Name);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpPut("favorite-folders/{id:int}")]
+    public async Task<ActionResult<FavoriteFolderDto>> UpdateFavoriteFolder(int id, [FromBody] UpdateFavoriteFolderRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (result, error) = await _threads.UpdateFavoriteFolderAsync(uid.Value, id, req.Name);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpDelete("favorite-folders/{id:int}")]
+    public async Task<ActionResult<ApiMessage>> DeleteFavoriteFolder(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _threads.DeleteFavoriteFolderAsync(uid.Value, id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已删除"));
+    }
+
+    [HttpPut("favorites/{favoriteId:int}/move")]
+    public async Task<ActionResult<ApiMessage>> MoveFavorite(int favoriteId, [FromBody] MoveFavoriteRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _threads.MoveFavoriteAsync(uid.Value, favoriteId, req.FolderId);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已移动"));
+    }
+
+    [HttpGet("favorites")]
+    public async Task<ActionResult<List<FavoriteItemDto>>> MyFavorites([FromQuery] int? folderId = null)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        return Ok(await _threads.GetFavoritesAsync(uid.Value, folderId));
     }
 }
 
@@ -137,11 +216,40 @@ public class UsersController : ControllerBase
 {
     private readonly AuthService _auth;
     private readonly ThreadService _threads;
+    private readonly LevelService _levels;
+    private readonly AppDbContext _db;
 
-    public UsersController(AuthService auth, ThreadService threads)
+    public UsersController(AuthService auth, ThreadService threads, LevelService levels, AppDbContext db)
     {
         _auth = auth;
         _threads = threads;
+        _levels = levels;
+        _db = db;
+    }
+
+    [HttpGet("search")]
+    public async Task<ActionResult<List<UserDto>>> SearchUsers([FromQuery] string q, [FromQuery] int limit = 8)
+    {
+        if (string.IsNullOrWhiteSpace(q) || q.Length < 1)
+            return Ok(new List<UserDto>());
+        var users = await _db.Users
+            .Where(u => u.Username.Contains(q) || u.Nickname.Contains(q))
+            .OrderBy(u => u.Username)
+            .Take(limit)
+            .ToListAsync();
+        var result = new List<UserDto>();
+        foreach (var u in users)
+        {
+            var levelName = await _levels.GetLevelNameAsync(u.Level);
+            var role = u.IsAdmin ? "admin" : "user";
+            CommunityService.ClearExpiredVip(u);
+            result.Add(new UserDto(
+                u.Id, u.Username, u.Nickname, u.Avatar, u.Points, u.Coins, u.Level, levelName,
+                u.ConsecutiveSignInDays, false, u.IsAdmin, role,
+                u.IsEffectivelyMuted(), u.MutedUntil, u.InviteCode ?? "", u.IsVip, u.VipUntil, u.VipTier,
+                VipAccess.TierLabel(u.VipTier), u.LotteryTickets, u.AvatarFrame));
+        }
+        return Ok(result);
     }
 
     [HttpGet("{id:int}")]
@@ -159,6 +267,7 @@ public class UsersController : ControllerBase
         return Ok(await _auth.GetActivityAsync(id));
     }
 
+    [Authorize]
     [HttpGet("{id:int}/purchases")]
     public async Task<ActionResult<List<PurchaseHistoryDto>>> GetPurchases(int id)
     {
@@ -166,10 +275,11 @@ public class UsersController : ControllerBase
         return Ok(await _threads.GetPurchasesAsync(id));
     }
 
+    [Authorize]
     [HttpGet("{id:int}/favorites")]
-    public async Task<ActionResult<List<FavoriteItemDto>>> GetFavorites(int id)
+    public async Task<ActionResult<List<FavoriteItemDto>>> GetFavorites(int id, [FromQuery] int? folderId = null)
     {
         if (await _auth.GetProfileAsync(id) == null) return NotFound(new ApiMessage("用户不存在"));
-        return Ok(await _threads.GetFavoritesAsync(id));
+        return Ok(await _threads.GetFavoritesAsync(id, folderId));
     }
 }

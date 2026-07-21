@@ -14,11 +14,11 @@
       <template v-else>
         <div v-for="t in items" :key="t.id" class="search-item">
           <div class="search-title">
-            <router-link :to="`/thread/${t.id}`">{{ t.title }}</router-link>
+            <router-link :to="`/thread/${t.id}`" v-html="highlight(t.title)"></router-link>
             <span v-if="t.type === 'private'" class="type-badge type-private">私密</span>
             <span v-if="t.type === 'coin'" class="type-badge type-coin">金币</span>
           </div>
-          <div class="search-snippet">{{ t.snippet }}</div>
+          <div class="search-snippet" v-html="highlight(t.snippet)"></div>
           <div class="search-meta">
             <span class="level-badge" :class="{ 'lv-high': t.authorLevel >= 5 }">Lv.{{ t.authorLevel }}</span>
             {{ t.authorNickname }}
@@ -30,11 +30,7 @@
             {{ fmt(t.createdAt) }}
           </div>
         </div>
-        <div v-if="totalPages > 1" class="p-3 d-flex gap-2 justify-content-center">
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-          <span class="align-self-center text-muted">{{ page }} / {{ totalPages }}</span>
-          <button class="btn btn-sm btn-outline-secondary" :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
-        </div>
+        <PaginationComp v-model="page" :total-pages="totalPages" />
         <div v-if="total > 0" class="p-2 text-center text-muted" style="font-size:12px">共 {{ total }} 条结果</div>
       </template>
     </div>
@@ -46,6 +42,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
+import PaginationComp from '../components/PaginationComp.vue'
 
 const route = useRoute()
 const items = ref([])
@@ -55,6 +52,19 @@ const loading = ref(true)
 const pageSize = 20
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const query = ref('')
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function highlight(text) {
+  if (!text || !query.value) return escapeHtml(text)
+  const escaped = escapeHtml(text)
+  const words = query.value.split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (!words.length) return escaped
+  const re = new RegExp('(' + words.join('|') + ')', 'gi')
+  return escaped.replace(re, '<mark class="hl">$1</mark>')
+}
 
 function fmt(iso) {
   if (!iso) return ''
@@ -83,6 +93,7 @@ watch(() => route.query.q, (q) => {
     load(1)
   }
 }, { immediate: true })
+watch(page, (p) => { if (p > 0) load(p) })
 </script>
 
 <style scoped>
@@ -121,4 +132,5 @@ watch(() => route.query.q, (q) => {
 }
 .type-private { background: #f3e8ff; color: #7c3aed; }
 .type-coin { background: #fef3c7; color: #b45309; }
+:deep(.hl) { background: #fef08a; color: #854d0e; padding: 0 2px; border-radius: 2px; }
 </style>

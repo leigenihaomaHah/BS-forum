@@ -152,6 +152,7 @@ import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import api from '../api/http'
+import { timeAgo } from '../utils/time.js'
 
 const COLORS = {
   miss: '#cbd5e1',
@@ -245,15 +246,6 @@ function labelStyle(i) {
   const angle = i * step + step / 2
   const radius = n > 10 ? 86 : n > 8 ? 90 : 100
   return { transform: `rotate(${angle}deg) translateY(-${radius}px) rotate(${-angle}deg)` }
-}
-
-function timeAgo(iso) {
-  if (!iso) return ''
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (sec < 60) return '刚刚'
-  if (sec < 3600) return `${Math.floor(sec / 60)}分钟前`
-  if (sec < 86400) return `${Math.floor(sec / 3600)}小时前`
-  return `${Math.floor(sec / 86400)}天前`
 }
 
 async function loadConfig() {

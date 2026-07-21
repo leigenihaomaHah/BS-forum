@@ -65,6 +65,6 @@ load()
 </script>
 
 <style scoped>
-.page-header { margin-bottom: 16px; }
+
 .form-label { font-size: 12px; margin-bottom: 2px; }
 </style>

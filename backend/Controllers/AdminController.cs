@@ -1,3 +1,4 @@
+using System.Text;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Services;
@@ -12,8 +13,13 @@ namespace ForumApi.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AdminService _admin;
+    private readonly ImageMigrationService _migrator;
 
-    public AdminController(AdminService admin) => _admin = admin;
+    public AdminController(AdminService admin, ImageMigrationService migrator)
+    {
+        _admin = admin;
+        _migrator = migrator;
+    }
 
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> Stats() => Ok(await _admin.GetStatsAsync());
@@ -264,5 +270,151 @@ public class AdminController : ControllerBase
         var (ok, error) = await _admin.DeleteBannerAsync(id);
         if (!ok) return NotFound(new ApiMessage(error!));
         return Ok(new ApiMessage("已删除"));
+    }
+
+    [HttpPost("migrate-images")]
+    public async Task<ActionResult<MigrationResult>> MigrateImages()
+    {
+        var result = await _migrator.MigrateAsync();
+        return Ok(result);
+    }
+
+    [HttpPut("levels/{id:int}")]
+    public async Task<IActionResult> UpdateLevel(int id, [FromBody] UpdateLevelRequest req)
+    {
+        var (result, error) = await _admin.UpdateLevelAsync(id, req);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    // ── Tags ─────────────────────────────────────────────
+    [HttpGet("tags")]
+    public async Task<ActionResult<List<AdminTagDto>>> Tags() => Ok(await _admin.GetTagsAsync());
+
+    [HttpPut("tags/{id:int}")]
+    public async Task<IActionResult> RenameTag(int id, [FromBody] RenameTagRequest req)
+    {
+        var (ok, error) = await _admin.RenameTagAsync(id, req.Name);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已重命名"));
+    }
+
+    [HttpDelete("tags/{id:int}")]
+    public async Task<IActionResult> DeleteTag(int id)
+    {
+        var (ok, error) = await _admin.DeleteTagAsync(id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已删除"));
+    }
+
+    // ── Posts (Reply Management) ─────────────────────────
+    [HttpGet("posts")]
+    public async Task<ActionResult<PagedResult<AdminPostDto>>> Posts(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null)
+        => Ok(await _admin.GetPostsAsync(page, pageSize, search));
+
+    [HttpDelete("posts/{id:int}")]
+    public async Task<IActionResult> DeletePost(int id)
+    {
+        var (ok, error) = await _admin.DeletePostAsync(id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已删除"));
+    }
+
+    // ── Batch Operations ─────────────────────────────────
+    [HttpPost("threads/batch")]
+    public async Task<IActionResult> BatchThreadAction([FromBody] BatchThreadActionRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var results = new List<string>();
+        foreach (var id in req.Ids)
+        {
+            try
+            {
+                switch (req.Action)
+                {
+                    case "hide":
+                        var (hOk, hErr) = await _admin.SetThreadHiddenAsync(uid.Value, id, true, "批量操作");
+                        if (hOk) results.Add($"#{id}: 已拉黑"); else results.Add($"#{id}: {hErr}");
+                        break;
+                    case "unhide":
+                        var (uOk, uErr) = await _admin.SetThreadHiddenAsync(uid.Value, id, false, "批量操作");
+                        if (uOk) results.Add($"#{id}: 已取消拉黑"); else results.Add($"#{id}: {uErr}");
+                        break;
+                    case "pin":
+                        var (pOk, pErr) = await _admin.SetThreadPinnedAsync(uid.Value, id, true, "批量操作");
+                        if (pOk) results.Add($"#{id}: 已置顶"); else results.Add($"#{id}: {pErr}");
+                        break;
+                    case "delete":
+                        var (dOk, dErr) = await _admin.DeleteThreadAsync(id);
+                        if (dOk) results.Add($"#{id}: 已删除"); else results.Add($"#{id}: {dErr}");
+                        break;
+                    default:
+                        results.Add($"#{id}: 未知操作");
+                        break;
+                }
+            }
+            catch (Exception ex) { results.Add($"#{id}: {ex.Message}"); }
+        }
+        return Ok(new { results });
+    }
+
+    // ── Notification Broadcast ─────────────────────────
+    [HttpPost("notifications/broadcast")]
+    public async Task<IActionResult> BroadcastNotification([FromBody] BroadcastNotificationRequest req)
+    {
+        var (ok, error) = await _admin.BroadcastNotificationAsync(req.Content, req.UserId);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("通知已发送"));
+    }
+
+    // ── Ledger ─────────────────────────────────────────
+    [HttpGet("ledger")]
+    public async Task<ActionResult<PagedResult<LedgerEntryDto>>> Ledger(
+        [FromQuery] int? userId, [FromQuery] string? type, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        => Ok(await _admin.GetLedgerAsync(userId, type, page, pageSize));
+
+    // ── Invite Codes ───────────────────────────────────
+    [HttpGet("invites")]
+    public async Task<ActionResult<List<AdminInviteDto>>> Invites()
+        => Ok(await _admin.GetInviteCodesAsync());
+
+    [HttpPost("invites/{userId:int}/regenerate")]
+    public async Task<IActionResult> RegenerateInvite(int userId)
+    {
+        try
+        {
+            var code = await _admin.RegenerateInviteCodeAsync(userId);
+            return Ok(new ApiMessage($"已重新生成：{code}"));
+        }
+        catch (Exception ex) { return BadRequest(new ApiMessage(ex.Message)); }
+    }
+
+    // ── Site Settings ──────────────────────────────────
+    [HttpGet("settings")]
+    public async Task<ActionResult<Dictionary<string, string>>> Settings()
+        => Ok(await _admin.GetSettingsAsync());
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpdateSettings([FromBody] AdminUpdateSettingsRequest req)
+    {
+        await _admin.UpdateSettingsAsync(req.Settings);
+        return Ok(new ApiMessage("设置已保存"));
+    }
+
+    // ── Data Export ────────────────────────────────────
+    [HttpGet("export/users")]
+    public async Task<IActionResult> ExportUsers()
+    {
+        var csv = await _admin.ExportUsersCsvAsync();
+        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"users_{DateTime.UtcNow:yyyyMMdd}.csv");
+    }
+
+    [HttpGet("export/threads")]
+    public async Task<IActionResult> ExportThreads()
+    {
+        var csv = await _admin.ExportThreadsCsvAsync();
+        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"threads_{DateTime.UtcNow:yyyyMMdd}.csv");
     }
 }

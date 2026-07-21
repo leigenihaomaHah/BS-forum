@@ -32,17 +32,27 @@ public class ThreadService
         _retention = retention;
     }
 
-    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(int forumId, int page, int pageSize)
+    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(int forumId, int page, int pageSize, string sort = "latest")
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
         var query = _db.Threads.Include(t => t.Author)
             .Where(t => t.ForumId == forumId && !t.IsHidden);
+
+        if (sort == "essence")
+            query = query.Where(t => t.IsEssence);
+
         var total = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(t => t.IsPinned)
-            .ThenByDescending(t => t.LastReplyAt)
+
+        IQueryable<ForumThread> ordered = sort switch
+        {
+            "newest" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.CreatedAt),
+            "hot" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.ReplyCount * 30 + t.Views + t.LikeCount * 50),
+            "replies" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.ReplyCount),
+            _ => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.LastReplyAt),
+        };
+        var items = await ordered
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -64,7 +74,6 @@ public class ThreadService
         var thread = await _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Include(t => t.Posts).ThenInclude(p => p.Author)
             .FirstOrDefaultAsync(t => t.Id == threadId);
 
         if (thread == null) return (null, "帖子不存在");
@@ -104,41 +113,46 @@ public class ThreadService
         }
         var canEdit = currentUserId.HasValue && (thread.AuthorId == currentUserId.Value || canModerate);
 
-        if (!canAccess && type == TypePrivate)
-        {
-            return (new ThreadDetailDto(
-                thread.Id, thread.ForumId, thread.Forum.Name, thread.Title, type, thread.CoinPrice,
-                thread.Views, thread.ReplyCount, thread.LikeCount, thread.CreatedAt,
-                liked, favorited, Restricted: true, Purchased: false,
-                thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, [], poll,
-                canModerate, canEdit), null);
-        }
-
-        if (!canAccess && type == TypeCoin)
-        {
-            var hiddenPosts = new List<PostDto>();
-            foreach (var p in thread.Posts.OrderBy(x => x.Floor))
-                hiddenPosts.Add(await MapPostDtoAsync(p, hideContent: true));
-
-            return (new ThreadDetailDto(
-                thread.Id, thread.ForumId, thread.Forum.Name, thread.Title, type, thread.CoinPrice,
-                thread.Views, thread.ReplyCount, thread.LikeCount, thread.CreatedAt,
-                liked, favorited, Restricted: false, Purchased: false,
-                thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, hiddenPosts, poll,
-                canModerate, canEdit), null);
-        }
-
-        var posts = new List<PostDto>();
-        var byId = thread.Posts.ToDictionary(p => p.Id);
-        foreach (var p in thread.Posts.OrderBy(x => x.Floor))
-            posts.Add(await MapPostDtoAsync(p, hideContent: false, byId));
-
         return (new ThreadDetailDto(
             thread.Id, thread.ForumId, thread.Forum.Name, thread.Title, type, thread.CoinPrice,
             thread.Views, thread.ReplyCount, thread.LikeCount, thread.CreatedAt,
-            liked, favorited, Restricted: false, Purchased: purchased || thread.AuthorId == currentUserId,
-            thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, posts, poll,
+            liked, favorited, Restricted: !canAccess, Purchased: purchased || thread.AuthorId == currentUserId,
+            thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, [], poll,
             canModerate, canEdit), null);
+    }
+
+    public async Task<PagedResult<PostDto>> GetPostsAsync(int threadId, int? currentUserId, int page, int pageSize)
+    {
+        var thread = await _db.Threads.Include(t => t.Forum).FirstOrDefaultAsync(t => t.Id == threadId);
+        if (thread == null || thread.IsHidden) return new PagedResult<PostDto>([], 0, page, pageSize);
+
+        User? viewer = null;
+        if (currentUserId.HasValue)
+            viewer = await _db.Users.FindAsync(currentUserId.Value);
+        if (!VipAccess.CanAccessForum(viewer, thread.Forum.MinVipTier))
+            return new PagedResult<PostDto>([], 0, page, pageSize);
+
+        var type = NormalizeType(thread.Type);
+        var purchased = false;
+        if (currentUserId.HasValue && type == TypeCoin)
+            purchased = await HasPurchasedAsync(thread.Id, currentUserId.Value);
+        var canAccess = await CanAccessAsync(thread, currentUserId, purchased);
+
+        var query = _db.Posts.Include(p => p.Author)
+            .Where(p => p.ThreadId == threadId)
+            .OrderBy(p => p.Floor);
+
+        var total = await query.CountAsync();
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+
+        var hideContent = !canAccess && type == TypeCoin && !purchased;
+        var byId = items.ToDictionary(p => p.Id);
+
+        var list = new List<PostDto>();
+        foreach (var p in items)
+            list.Add(await MapPostDtoAsync(p, hideContent, byId));
+
+        return new PagedResult<PostDto>(list, total, page, pageSize);
     }
 
     private async Task<AuthorBriefDto> MapAuthorAsync(User u)
@@ -256,6 +270,14 @@ public class ThreadService
             await _retention.NotifyForumSubscribersAsync(forum.Id, user.Id, user.Nickname, thread.Id, thread.Title);
             await _retention.DeleteDraftByForumAsync(userId, forum.Id);
 
+            foreach (var name in CommunityService.ExtractMentions(content))
+            {
+                var mentioned = await _db.Users.FirstOrDefaultAsync(u => u.Nickname == name || u.Username == name);
+                if (mentioned != null)
+                    await _notifications.AddMentionNotificationAsync(mentioned.Id, user.Id, user.Nickname, thread.Id, thread.Title);
+            }
+            await _db.SaveChangesAsync();
+
             return await GetThreadAsync(thread.Id, userId);
         }
         catch
@@ -330,9 +352,48 @@ public class ThreadService
             thread.LastReplyAt = DateTime.UtcNow;
             thread.Forum.PostCount += 1;
 
-            var awarded = await _rewards.TryAwardPointsAsync(user, 2, RewardService.ReasonReply, "thread", thread.Id, dailyLimit: 20);
-            if (awarded)
-                await _rewards.AwardCoinsAsync(user, 2, RewardService.ReasonReply, "thread", thread.Id);
+            // 阶梯奖励：当日回帖次数越多，单次收益递减，防刷币同时保持活跃动力
+            var todayReplyCount = await _db.PointLedgers
+                .CountAsync(p => p.UserId == user.Id && p.Reason == RewardService.ReasonReply && p.CreatedAt >= DateTime.UtcNow.Date);
+
+            var pts = 0;
+            var cns = 0;
+
+            if (todayReplyCount < 10)      // 第 1-10 次：满额
+            {
+                pts = 2;
+                cns = 2;
+            }
+            else if (todayReplyCount < 20) // 第 11-20 次：金币减半
+            {
+                pts = 2;
+                cns = 1;
+            }
+            else if (todayReplyCount < 30) // 第 21-30 次：仅象征积分
+            {
+                pts = 1;
+            }
+
+            if (pts > 0)
+            {
+                user.Points += pts;
+                _db.PointLedgers.Add(new PointLedger
+                {
+                    UserId = user.Id, Delta = pts, Reason = RewardService.ReasonReply,
+                    RefType = "thread", RefId = thread.Id
+                });
+                await _levels.RecalculateLevelAsync(user);
+            }
+
+            if (cns > 0)
+            {
+                user.Coins += cns;
+                _db.CoinLedgers.Add(new CoinLedger
+                {
+                    UserId = user.Id, Delta = cns, Reason = RewardService.ReasonReply,
+                    RefType = "thread", RefId = thread.Id
+                });
+            }
 
             await _notifications.AddReplyNotificationAsync(
                 thread.AuthorId, user.Id, user.Nickname, thread.Id, thread.Title,
@@ -464,6 +525,7 @@ public class ThreadService
         if (existing != null)
             return (null, "已经点过赞了");
 
+        await using var tx = await _db.Database.BeginTransactionAsync();
         _db.ThreadLikes.Add(new ThreadLike { ThreadId = threadId, UserId = userId });
         thread.LikeCount += 1;
 
@@ -471,6 +533,7 @@ public class ThreadService
             await _rewards.TryAwardPointsAsync(thread.Author, 1, RewardService.ReasonLiked, "thread", threadId, dailyLimit: 30);
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         await _community.BumpTaskAsync(userId, "like");
         return ("点赞成功", null);
     }
@@ -565,15 +628,128 @@ public class ThreadService
         return (new FavoriteResultDto(true, "已收藏"), null);
     }
 
-    public async Task<List<FavoriteItemDto>> GetFavoritesAsync(int userId)
+    public async Task<List<FavoriteItemDto>> GetFavoritesAsync(int userId, int? folderId = null)
     {
-        return await _db.ThreadFavorites
+        var query = _db.ThreadFavorites
             .Include(f => f.Thread).ThenInclude(t => t.Forum)
-            .Where(f => f.UserId == userId && !f.Thread.IsHidden)
+            .Where(f => f.UserId == userId && !f.Thread.IsHidden);
+
+        if (folderId.HasValue)
+        {
+            if (folderId.Value == -1)
+                query = query.Where(f => f.FolderId == null);
+            else
+                query = query.Where(f => f.FolderId == folderId.Value);
+        }
+
+        return await query
             .OrderByDescending(f => f.CreatedAt)
             .Select(f => new FavoriteItemDto(
-                f.Thread.Id, f.Thread.Title, f.Thread.Forum.Name, f.Thread.ReplyCount, f.CreatedAt))
+                f.Id, f.Thread.Id, f.Thread.Title, f.Thread.Forum.Name, f.Thread.ReplyCount, f.CreatedAt, f.FolderId))
             .ToListAsync();
+    }
+
+    public async Task<List<FavoriteFolderDto>> GetFavoriteFoldersAsync(int userId)
+    {
+        return await _db.FavoriteFolders
+            .Where(f => f.UserId == userId)
+            .OrderBy(f => f.SortOrder).ThenBy(f => f.Id)
+            .Select(f => new FavoriteFolderDto(
+                f.Id, f.Name, f.SortOrder,
+                f.Favorites.Count,
+                f.CreatedAt))
+            .ToListAsync();
+    }
+
+    public async Task<(FavoriteFolderDto? Result, string? Error)> CreateFavoriteFolderAsync(int userId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 20)
+            return (null, "分类名称不能为空且不超过 20 字");
+
+        var maxOrder = await _db.FavoriteFolders
+            .Where(f => f.UserId == userId)
+            .MaxAsync(f => (int?)f.SortOrder) ?? 0;
+
+        var folder = new FavoriteFolder
+        {
+            UserId = userId,
+            Name = name.Trim(),
+            SortOrder = maxOrder + 1
+        };
+        _db.FavoriteFolders.Add(folder);
+        await _db.SaveChangesAsync();
+
+        return (new FavoriteFolderDto(folder.Id, folder.Name, folder.SortOrder, 0, folder.CreatedAt), null);
+    }
+
+    public async Task<(FavoriteFolderDto? Result, string? Error)> UpdateFavoriteFolderAsync(int userId, int folderId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 20)
+            return (null, "分类名称不能为空且不超过 20 字");
+
+        var folder = await _db.FavoriteFolders.FirstOrDefaultAsync(f => f.Id == folderId && f.UserId == userId);
+        if (folder == null) return (null, "分类不存在");
+
+        folder.Name = name.Trim();
+        await _db.SaveChangesAsync();
+
+        var count = await _db.ThreadFavorites.CountAsync(f => f.FolderId == folderId);
+        return (new FavoriteFolderDto(folder.Id, folder.Name, folder.SortOrder, count, folder.CreatedAt), null);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteFavoriteFolderAsync(int userId, int folderId)
+    {
+        var folder = await _db.FavoriteFolders.FirstOrDefaultAsync(f => f.Id == folderId && f.UserId == userId);
+        if (folder == null) return (false, "分类不存在");
+
+        // Unlink favorites in this folder
+        var favorites = await _db.ThreadFavorites.Where(f => f.FolderId == folderId).ToListAsync();
+        foreach (var f in favorites) f.FolderId = null;
+
+        _db.FavoriteFolders.Remove(folder);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> MoveFavoriteAsync(int userId, int favoriteId, int? folderId)
+    {
+        var fav = await _db.ThreadFavorites.FirstOrDefaultAsync(f => f.Id == favoriteId && f.UserId == userId);
+        if (fav == null) return (false, "收藏不存在");
+
+        if (folderId.HasValue)
+        {
+            var folder = await _db.FavoriteFolders.AnyAsync(f => f.Id == folderId.Value && f.UserId == userId);
+            if (!folder) return (false, "分类不存在");
+        }
+
+        fav.FolderId = folderId;
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
+
+    public async Task<PagedResult<ThreadListItemDto>> GetMyThreadsAsync(int userId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var query = _db.Threads.Include(t => t.Author)
+            .Where(t => t.AuthorId == userId && !t.IsHidden);
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var list = new List<ThreadListItemDto>();
+        foreach (var t in items)
+        {
+            var ln = await _levels.GetLevelNameAsync(t.Author.Level);
+            list.Add(new ThreadListItemDto(
+                t.Id, t.Title, NormalizeType(t.Type), t.Views, t.ReplyCount, t.LikeCount,
+                t.CreatedAt, t.LastReplyAt, t.Author.Nickname, t.Author.Level, ln, t.IsPinned, t.IsEssence));
+        }
+        return new PagedResult<ThreadListItemDto>(list, total, page, pageSize);
     }
 
     public async Task<(TipResultDto? Result, string? Error)> TipAsync(int userId, int threadId, int amount)

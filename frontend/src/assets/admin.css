@@ -2,8 +2,17 @@
 .page-title {
   font-size: 20px;
   font-weight: 700;
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--ink, #142033);
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .admin-panel {

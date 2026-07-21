@@ -96,6 +96,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
+import { useToastStore } from '../../stores/toast'
+
+const toast = useToastStore()
 
 const orders = ref([])
 const statusFilter = ref('pending')
@@ -119,7 +122,7 @@ function shortCode(code) {
 async function copyOne(code) {
   try {
     await navigator.clipboard.writeText(code)
-    alert('卡密已复制')
+    toast.success('卡密已复制')
   } catch {
     prompt('请手动复制卡密', code)
   }
@@ -139,8 +142,8 @@ async function confirmOrder(o) {
     lastCard.value = data.cardCode || data.order?.cardCode || ''
     lastMsg.value = data.message || '已生成卡密并自动兑换'
     await loadOrders()
-    alert(lastMsg.value)
-  } catch (e) { alert(e.message) }
+    toast.success(lastMsg.value)
+  } catch (e) { toast.error(e.message) }
 }
 
 async function cancelOrder(id) {
@@ -148,14 +151,14 @@ async function cancelOrder(id) {
   try {
     await api.post(`/admin/recharge/orders/${id}/cancel`)
     await loadOrders()
-  } catch (e) { alert(e.message) }
+  } catch (e) { toast.error(e.message) }
 }
 
 onMounted(loadOrders)
 </script>
 
 <style scoped>
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+
 .card-code {
   background: #f2f4f7;
   padding: 4px 8px;
