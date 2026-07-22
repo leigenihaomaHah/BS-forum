@@ -162,12 +162,12 @@ Assert-Case 'admin reports' {
 }
 
 Assert-Case 'frontend messages route' {
-  $html = (Invoke-WebRequest -Uri 'http://localhost:5173/messages' -UseBasicParsing).Content
+  $html = (Invoke-WebRequest -Uri 'http://127.0.0.1:4173/messages' -UseBasicParsing).Content
   if ($html -notmatch 'id="app"|vite') { throw 'unexpected html' }
 }
 
 Assert-Case 'frontend search route' {
-  $null = Invoke-WebRequest -Uri 'http://localhost:5173/search?q=test' -UseBasicParsing
+  $null = Invoke-WebRequest -Uri 'http://127.0.0.1:4173/search?q=test' -UseBasicParsing
 }
 
 Assert-Case 'soft-delete reply' {
