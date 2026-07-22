@@ -2,6 +2,7 @@
   <AppLayout>
     <div class="breadcrumb-bar">首页 / 论坛</div>
     <BannerCarousel />
+    <HomePulseBar />
     <EssencePanel />
     <SubscriptionUnreadPanel />
     <FeedPanel />
@@ -26,6 +27,7 @@ import SubscriptionUnreadPanel from '../components/SubscriptionUnreadPanel.vue'
 import FeedPanel from '../components/FeedPanel.vue'
 import HotThreadsPanel from '../components/HotThreadsPanel.vue'
 import ForumSection from '../components/ForumSection.vue'
+import HomePulseBar from '../components/HomePulseBar.vue'
 
 const categories = ref([])
 const loading = ref(true)

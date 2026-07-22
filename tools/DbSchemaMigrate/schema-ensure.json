@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "description": "幂等刷表/刷列：已存在则跳过。新增结构只改本文件，部署前先跑 DbSchemaMigrate.exe。",
+  "tables": [
+    {
+      "name": "Notifications",
+      "sql": "CREATE TABLE IF NOT EXISTS \"Notifications\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"Type\" TEXT NOT NULL, \"ThreadId\" INTEGER NOT NULL, \"ThreadTitle\" TEXT NOT NULL, \"FromUserId\" INTEGER NOT NULL, \"FromNickname\" TEXT NOT NULL, \"Content\" TEXT NOT NULL, \"Read\" INTEGER NOT NULL, \"CreatedAt\" TEXT NOT NULL, \"PostId\" INTEGER NOT NULL DEFAULT 0, \"Floor\" INTEGER NOT NULL DEFAULT 0);"
+    },
+    {
+      "name": "ModerationLogs",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ModerationLogs\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"AdminId\" INTEGER NOT NULL, \"TargetType\" TEXT NOT NULL, \"TargetId\" INTEGER NOT NULL, \"Action\" TEXT NOT NULL, \"Reason\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "LotterySpins",
+      "sql": "CREATE TABLE IF NOT EXISTS \"LotterySpins\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"CostCoins\" INTEGER NOT NULL, \"PrizeCoins\" INTEGER NOT NULL, \"PrizePoints\" INTEGER NOT NULL DEFAULT 0, \"PrizeLabel\" TEXT NOT NULL, \"IsFree\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "UserFollows",
+      "sql": "CREATE TABLE IF NOT EXISTS \"UserFollows\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"FollowerId\" INTEGER NOT NULL, \"FolloweeId\" INTEGER NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "UserBlocks",
+      "sql": "CREATE TABLE IF NOT EXISTS \"UserBlocks\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"BlockedUserId\" INTEGER NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "Tags",
+      "sql": "CREATE TABLE IF NOT EXISTS \"Tags\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Name\" TEXT NOT NULL);"
+    },
+    {
+      "name": "ThreadTags",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ThreadTags\" (\"ThreadId\" INTEGER NOT NULL, \"TagId\" INTEGER NOT NULL, PRIMARY KEY (\"ThreadId\", \"TagId\"));"
+    },
+    {
+      "name": "ShopItems",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ShopItems\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Sku\" TEXT NOT NULL, \"Name\" TEXT NOT NULL, \"Description\" TEXT NOT NULL, \"Currency\" TEXT NOT NULL, \"Price\" INTEGER NOT NULL, \"ItemType\" TEXT NOT NULL, \"Meta\" TEXT NOT NULL, \"SortOrder\" INTEGER NOT NULL DEFAULT 0, \"Enabled\" INTEGER NOT NULL DEFAULT 1);"
+    },
+    {
+      "name": "UserInventories",
+      "sql": "CREATE TABLE IF NOT EXISTS \"UserInventories\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"ItemType\" TEXT NOT NULL, \"Meta\" TEXT NOT NULL, \"ExpiresAt\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL, \"Quantity\" INTEGER NOT NULL DEFAULT 1);"
+    },
+    {
+      "name": "UserBadges",
+      "sql": "CREATE TABLE IF NOT EXISTS \"UserBadges\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"BadgeCode\" TEXT NOT NULL, \"EarnedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "UserTaskProgress",
+      "sql": "CREATE TABLE IF NOT EXISTS \"UserTaskProgress\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"TaskCode\" TEXT NOT NULL, \"Progress\" INTEGER NOT NULL DEFAULT 0, \"Target\" INTEGER NOT NULL DEFAULT 1, \"Claimed\" INTEGER NOT NULL DEFAULT 0, \"ProgressDate\" TEXT NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "Reports",
+      "sql": "CREATE TABLE IF NOT EXISTS \"Reports\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"ReporterId\" INTEGER NOT NULL, \"TargetType\" TEXT NOT NULL, \"TargetId\" INTEGER NOT NULL, \"Reason\" TEXT NOT NULL, \"Status\" TEXT NOT NULL DEFAULT 'pending', \"HandledById\" INTEGER NULL, \"HandledAt\" TEXT NULL, \"HandleNote\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "ForumModerators",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ForumModerators\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"ForumId\" INTEGER NOT NULL, \"UserId\" INTEGER NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "PollOptions",
+      "sql": "CREATE TABLE IF NOT EXISTS \"PollOptions\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"ThreadId\" INTEGER NOT NULL, \"Text\" TEXT NOT NULL, \"Votes\" INTEGER NOT NULL DEFAULT 0);"
+    },
+    {
+      "name": "PollVotes",
+      "sql": "CREATE TABLE IF NOT EXISTS \"PollVotes\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"ThreadId\" INTEGER NOT NULL, \"UserId\" INTEGER NOT NULL, \"OptionId\" INTEGER NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "ThreadDrafts",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ThreadDrafts\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"ForumId\" INTEGER NOT NULL, \"Title\" TEXT NOT NULL, \"Content\" TEXT NOT NULL, \"Type\" TEXT NOT NULL, \"CoinPrice\" INTEGER NOT NULL DEFAULT 0, \"Tags\" TEXT NOT NULL DEFAULT '', \"CreatedAt\" TEXT NOT NULL, \"UpdatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "BrowseHistories",
+      "sql": "CREATE TABLE IF NOT EXISTS \"BrowseHistories\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"ThreadId\" INTEGER NOT NULL, \"ViewedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "ForumSubscriptions",
+      "sql": "CREATE TABLE IF NOT EXISTS \"ForumSubscriptions\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"ForumId\" INTEGER NOT NULL, \"LastReadAt\" TEXT NOT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "HomeBanners",
+      "sql": "CREATE TABLE IF NOT EXISTS \"HomeBanners\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Title\" TEXT NOT NULL, \"ImageUrl\" TEXT NOT NULL, \"LinkUrl\" TEXT NOT NULL, \"SortOrder\" INTEGER NOT NULL DEFAULT 0, \"Enabled\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "RechargePackages",
+      "sql": "CREATE TABLE IF NOT EXISTS \"RechargePackages\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL, \"Description\" TEXT NOT NULL, \"Price\" REAL NOT NULL, \"VipDays\" INTEGER NOT NULL, \"SortOrder\" INTEGER NOT NULL DEFAULT 0, \"Enabled\" INTEGER NOT NULL DEFAULT 1);"
+    },
+    {
+      "name": "RechargeOrders",
+      "sql": "CREATE TABLE IF NOT EXISTS \"RechargeOrders\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"PackageId\" INTEGER NOT NULL, \"OrderNo\" TEXT NOT NULL, \"Amount\" REAL NOT NULL, \"Status\" TEXT NOT NULL, \"PaidAt\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "RechargeCards",
+      "sql": "CREATE TABLE IF NOT EXISTS \"RechargeCards\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Code\" TEXT NOT NULL, \"PackageId\" INTEGER NOT NULL, \"IsUsed\" INTEGER NOT NULL DEFAULT 0, \"UsedById\" INTEGER NULL, \"UsedAt\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "SiteSettings",
+      "sql": "CREATE TABLE IF NOT EXISTS \"SiteSettings\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Key\" TEXT NOT NULL, \"Value\" TEXT NOT NULL);"
+    },
+    {
+      "name": "FavoriteFolders",
+      "sql": "CREATE TABLE IF NOT EXISTS \"FavoriteFolders\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"UserId\" INTEGER NOT NULL, \"Name\" TEXT NOT NULL, \"SortOrder\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "PrivateMessages",
+      "sql": "CREATE TABLE IF NOT EXISTS \"PrivateMessages\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"SenderId\" INTEGER NOT NULL, \"ReceiverId\" INTEGER NOT NULL, \"Content\" TEXT NOT NULL, \"IsRead\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL);"
+    }
+  ],
+  "columns": [
+    { "table": "Posts", "name": "Images", "sqlType": "TEXT NOT NULL DEFAULT ''" },
+    { "table": "Posts", "name": "ReplyToPostId", "sqlType": "INTEGER NULL" },
+    { "table": "Posts", "name": "EditedAt", "sqlType": "TEXT NULL" },
+    { "table": "Posts", "name": "IsDeleted", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Posts", "name": "DeletedAt", "sqlType": "TEXT NULL" },
+
+    { "table": "Threads", "name": "MinLevel", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "CoinPrice", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "IsEssence", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "IsPinned", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "Type", "sqlType": "TEXT NOT NULL DEFAULT 'normal'" },
+    { "table": "Threads", "name": "IsPrivate", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "IsHidden", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "RepliesLocked", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "Tags", "sqlType": "TEXT NOT NULL DEFAULT ''" },
+    { "table": "Threads", "name": "MaxParticipants", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "IsSticky", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "PendingReview", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+
+    { "table": "Users", "name": "AvatarFrame", "sqlType": "TEXT NULL" },
+    { "table": "Users", "name": "InviteCode", "sqlType": "TEXT NULL" },
+    { "table": "Users", "name": "InvitedByUserId", "sqlType": "INTEGER NULL" },
+    { "table": "Users", "name": "ShowPurchases", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Users", "name": "ShowFavorites", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Users", "name": "Email", "sqlType": "TEXT NULL" },
+    { "table": "Users", "name": "NotifyReply", "sqlType": "INTEGER NOT NULL DEFAULT 1" },
+    { "table": "Users", "name": "NotifyMention", "sqlType": "INTEGER NOT NULL DEFAULT 1" },
+
+    { "table": "LotterySpins", "name": "PrizePoints", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Notifications", "name": "PostId", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Notifications", "name": "Floor", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "UserInventories", "name": "Quantity", "sqlType": "INTEGER NOT NULL DEFAULT 1" },
+    { "table": "ThreadFavorites", "name": "FolderId", "sqlType": "INTEGER NULL" }
+  ],
+  "indexes": [
+    "CREATE INDEX IF NOT EXISTS \"IX_Notifications_UserId_CreatedAt\" ON \"Notifications\" (\"UserId\", \"CreatedAt\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_ModerationLogs_TargetType_TargetId_CreatedAt\" ON \"ModerationLogs\" (\"TargetType\", \"TargetId\", \"CreatedAt\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_LotterySpins_UserId_CreatedAt\" ON \"LotterySpins\" (\"UserId\", \"CreatedAt\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserFollows_FollowerId_FolloweeId\" ON \"UserFollows\" (\"FollowerId\", \"FolloweeId\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserBlocks_UserId_BlockedUserId\" ON \"UserBlocks\" (\"UserId\", \"BlockedUserId\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Tags_Name\" ON \"Tags\" (\"Name\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ShopItems_Sku\" ON \"ShopItems\" (\"Sku\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserBadges_UserId_BadgeCode\" ON \"UserBadges\" (\"UserId\", \"BadgeCode\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserTaskProgress_UserId_TaskCode_ProgressDate\" ON \"UserTaskProgress\" (\"UserId\", \"TaskCode\", \"ProgressDate\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ForumModerators_ForumId_UserId\" ON \"ForumModerators\" (\"ForumId\", \"UserId\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PollVotes_ThreadId_UserId\" ON \"PollVotes\" (\"ThreadId\", \"UserId\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_ThreadDrafts_UserId_ForumId\" ON \"ThreadDrafts\" (\"UserId\", \"ForumId\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_BrowseHistories_UserId_ThreadId\" ON \"BrowseHistories\" (\"UserId\", \"ThreadId\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ForumSubscriptions_UserId_ForumId\" ON \"ForumSubscriptions\" (\"UserId\", \"ForumId\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_HomeBanners_Enabled_SortOrder\" ON \"HomeBanners\" (\"Enabled\", \"SortOrder\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_RechargePackages_Code\" ON \"RechargePackages\" (\"Code\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_RechargeOrders_UserId_CreatedAt\" ON \"RechargeOrders\" (\"UserId\", \"CreatedAt\");",
+    "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_RechargeCards_Code\" ON \"RechargeCards\" (\"Code\");",
+    "CREATE INDEX IF NOT EXISTS \"IX_PrivateMessages_SenderId_ReceiverId\" ON \"PrivateMessages\" (\"SenderId\", \"ReceiverId\");"
+  ]
+}

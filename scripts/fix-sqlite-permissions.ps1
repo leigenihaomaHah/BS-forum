@@ -1,19 +1,32 @@
-# Grant write access for SQLite (forum.db + WAL/SHM sidecars) under IIS.
+# Grant write access for SQLite under IIS (external data dir + site logs).
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File scripts\fix-sqlite-permissions.ps1 -PublishDir D:\BS\BS\publish\iis
-#   powershell -ExecutionPolicy Bypass -File scripts\fix-sqlite-permissions.ps1 -PublishDir D:\BS\BS\publish\iis -AppPoolName BS
+#   powershell -ExecutionPolicy Bypass -File scripts\fix-sqlite-permissions.ps1 -PublishDir D:\BS\BS\publish\iis -DataDir D:\BS\BS\data
 param(
   [Parameter(Mandatory = $true)]
   [string]$PublishDir,
+  [string]$DataDir = "",
   [string]$AppPoolName = ""
 )
 
 $ErrorActionPreference = "Continue"
 $PublishDir = (Resolve-Path $PublishDir).Path
 
-$appData = Join-Path $PublishDir "App_Data"
+if (-not $DataDir) {
+  $DataDir = $env:BS_DATA_DIR
+}
+if (-not $DataDir) {
+  # Default: sibling ../data relative to publish/iis when using repo publish layout
+  $candidate = Join-Path (Split-Path (Split-Path $PublishDir -Parent) -Parent) "data"
+  if (Test-Path $candidate) { $DataDir = $candidate }
+  else { $DataDir = Join-Path $PublishDir "App_Data" }
+}
+
+if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir | Out-Null }
+$DataDir = (Resolve-Path $DataDir).Path
+
 $logs = Join-Path $PublishDir "logs"
-foreach ($d in @($appData, $logs)) {
+$legacyAppData = Join-Path $PublishDir "App_Data"
+foreach ($d in @($DataDir, $logs, $legacyAppData)) {
   if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d | Out-Null }
 }
 
@@ -21,7 +34,6 @@ $idents = @("IIS_IUSRS", "IUSR")
 if ($AppPoolName) {
   $idents += "IIS AppPool\$AppPoolName"
 } else {
-  # Try detect pool from site whose physical path matches
   try {
     Import-Module WebAdministration -ErrorAction Stop
     Get-Website | ForEach-Object {
@@ -35,30 +47,33 @@ if ($AppPoolName) {
 }
 
 $idents = $idents | Select-Object -Unique
-Write-Host "Granting Modify on App_Data + logs to: $($idents -join ', ')"
+Write-Host "Granting Modify on DataDir + logs to: $($idents -join ', ')"
+Write-Host "DataDir: $DataDir"
 
 foreach ($id in $idents) {
-  icacls $appData /grant "${id}:(OI)(CI)M" /T | Out-Null
+  icacls $DataDir /grant "${id}:(OI)(CI)M" /T | Out-Null
   icacls $logs /grant "${id}:(OI)(CI)M" /T | Out-Null
-  # Also parent dir so SQLite can create WAL next to db if path resolves oddly
+  icacls $legacyAppData /grant "${id}:(OI)(CI)M" /T | Out-Null
   icacls $PublishDir /grant "${id}:(OI)(CI)M" | Out-Null
 }
 
-# Clear read-only attribute on db files if set
-Get-ChildItem $appData -Filter "forum.db*" -ErrorAction SilentlyContinue | ForEach-Object {
+Get-ChildItem $DataDir -Filter "forum.db*" -ErrorAction SilentlyContinue | ForEach-Object {
   $_.Attributes = $_.Attributes -band (-bnot [IO.FileAttributes]::ReadOnly)
-  Write-Host "cleared ReadOnly: $($_.Name)"
+  Write-Host "cleared ReadOnly: $($_.FullName)"
+}
+Get-ChildItem $legacyAppData -Filter "forum.db*" -ErrorAction SilentlyContinue | ForEach-Object {
+  $_.Attributes = $_.Attributes -band (-bnot [IO.FileAttributes]::ReadOnly)
+  Write-Host "cleared ReadOnly: $($_.FullName)"
 }
 
-# Probe write
-$probe = Join-Path $appData ".write_probe"
+$probe = Join-Path $DataDir ".write_probe"
 try {
   [IO.File]::WriteAllText($probe, [DateTime]::UtcNow.ToString("o"))
   Remove-Item $probe -Force -ErrorAction SilentlyContinue
-  Write-Host "OK: App_Data is writable"
+  Write-Host "OK: DataDir is writable"
 } catch {
-  Write-Host "WARN: App_Data write probe failed: $($_.Exception.Message)"
-  Write-Host "Manually grant Modify to IIS AppPool\<pool> on $appData"
+  Write-Host "WARN: DataDir write probe failed: $($_.Exception.Message)"
+  Write-Host "Manually grant Modify to IIS AppPool\<pool> on $DataDir"
   exit 1
 }
 

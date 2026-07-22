@@ -4,6 +4,8 @@ backend/forum.db
 backend/forum.db-shm
 backend/forum.db-wal
 backend/App_Data/
+data/
+!data/.gitkeep
 frontend/node_modules/
 frontend/dist/
 publish/

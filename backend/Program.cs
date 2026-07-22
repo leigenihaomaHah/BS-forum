@@ -44,22 +44,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var contentRoot = builder.Environment.ContentRootPath;
-var appData = Path.Combine(contentRoot, "App_Data");
-Directory.CreateDirectory(appData);
-var connStr = builder.Configuration.GetConnectionString("Default") ?? "Data Source=App_Data/forum.db";
-if (connStr.Contains("App_Data", StringComparison.OrdinalIgnoreCase)
-    && !Path.IsPathRooted(connStr.Replace("Data Source=", "", StringComparison.OrdinalIgnoreCase).Trim()))
-{
-    var file = connStr.Split("Data Source=", StringSplitOptions.None).Last().Trim();
-    var fullDb = Path.GetFullPath(Path.Combine(contentRoot, file));
-    Directory.CreateDirectory(Path.GetDirectoryName(fullDb)!);
-    connStr = $"Data Source={fullDb}";
-}
-// Shared cache + busy timeout reduces SQLite lock failures under concurrent requests / IIS recycle.
-if (!connStr.Contains("Cache=", StringComparison.OrdinalIgnoreCase))
-    connStr += ";Cache=Shared";
-if (!connStr.Contains("Mode=", StringComparison.OrdinalIgnoreCase))
-    connStr += ";Mode=ReadWriteCreate";
+var connStr = SqlitePath.ResolveConnectionString(builder.Configuration, contentRoot);
+var dbFilePath = SqlitePath.ResolveDbFilePath(builder.Configuration, contentRoot);
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite(connStr));
 
 var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["Jwt:Key"];
@@ -99,6 +85,7 @@ builder.Services.AddCors(opt =>
     });
 });
 
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CaptchaService>();
 builder.Services.AddSingleton<RateLimitService>();
 builder.Services.AddScoped<JwtHelper>();
@@ -109,6 +96,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ForumQueryService>();
 builder.Services.AddScoped<ThreadService>();
 builder.Services.AddScoped<HotService>();
+builder.Services.AddScoped<SitePulseService>();
 builder.Services.AddScoped<SearchService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<LotteryService>();
@@ -123,31 +111,29 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DbInit");
     try
     {
-        // Fail fast with a clear message if the process cannot write SQLite files (common on IIS/Linux deploys)
-        var dbPathMatch = System.Text.RegularExpressions.Regex.Match(connStr, @"Data Source=([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (dbPathMatch.Success)
-        {
-            var dbFile = dbPathMatch.Groups[1].Value.Trim().Trim('"');
-            var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbFile)) ?? appData;
-            Directory.CreateDirectory(dbDir);
-            var probe = Path.Combine(dbDir, ".write_probe");
-            await File.WriteAllTextAsync(probe, DateTime.UtcNow.ToString("o"));
-            File.Delete(probe);
-        }
+        var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbFilePath)) ?? contentRoot;
+        Directory.CreateDirectory(dbDir);
+        var probe = Path.Combine(dbDir, ".write_probe");
+        await File.WriteAllTextAsync(probe, DateTime.UtcNow.ToString("o"));
+        File.Delete(probe);
 
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
         await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=5000;");
-        await DbSeeder.SeedAsync(db);
+        // 表/列增量升级改由独立工具 tools/DbSchemaMigrate（部署前先执行），启动不再 ALTER。
+        await db.Database.EnsureCreatedAsync();
+        var bulkDemo = app.Configuration.GetValue("Seed:BulkDemo", app.Environment.IsDevelopment());
+        await DbSeeder.SeedAsync(db, bulkDemo);
         var settings = scope.ServiceProvider.GetRequiredService<SiteSettingsService>();
         await settings.EnsureDefaultsAsync();
+        logger.LogInformation("SQLite ready at {DbPath}（结构请用 DbSchemaMigrate.exe 维护）", dbFilePath);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "数据库初始化失败，站点仍会启动；请检查 App_Data 写权限与 forum.db（SQLite Error 8 = 目录只读）");
+        logger.LogError(ex, "数据库初始化失败，站点仍会启动；请检查 BS_DATA_DIR / 库目录写权限与 forum.db（SQLite Error 8 = 目录只读）");
     }
 }
 

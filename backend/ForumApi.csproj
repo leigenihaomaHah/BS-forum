@@ -8,6 +8,9 @@
 
   <ItemGroup>
     <Content Update="appsettings.Production.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Never ship SQLite DB inside publish output (avoids overwriting production data). -->
+    <Content Remove="**\*.db;**\*.db-shm;**\*.db-wal;App_Data\**" />
+    <None Remove="**\*.db;**\*.db-shm;**\*.db-wal;App_Data\**" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,9 +5,9 @@ namespace ForumApi.Data;
 
 public static class DbSeeder
 {
-    public static async Task SeedAsync(AppDbContext db)
+    /// <summary>Idempotent CREATE/ALTER used by <see cref="SchemaMigrator"/>.</summary>
+    public static async Task ApplySchemaEnsuresAsync(AppDbContext db)
     {
-        await db.Database.EnsureCreatedAsync();
         await EnsureNotificationsTableAsync(db);
         await EnsurePostImagesColumnAsync(db);
         await EnsureThreadAccessSchemaAsync(db);
@@ -20,12 +20,18 @@ public static class DbSeeder
         await EnsureFavoriteFolderSchemaAsync(db);
         await EnsureUpgradeSchemaAsync(db);
         await EnsureDefaultLevelRulesAsync(db);
+    }
+
+    /// <param name="bulkDemo">When false (typical Production), skip bulk demo thread seeding.</param>
+    public static async Task SeedAsync(AppDbContext db, bool bulkDemo = true)
+    {
         await RepairCorruptedSeedTextAsync(db);
 
         if (await db.Users.AnyAsync())
         {
             await SyncReplyCountsAsync(db);
-            await BulkContentSeeder.EnsureAsync(db);
+            if (bulkDemo)
+                await BulkContentSeeder.EnsureAsync(db);
             return;
         }
 
@@ -167,7 +173,8 @@ public static class DbSeeder
         }
         await db.SaveChangesAsync();
         await SyncReplyCountsAsync(db);
-        await BulkContentSeeder.EnsureAsync(db);
+        if (bulkDemo)
+            await BulkContentSeeder.EnsureAsync(db);
     }
 
     /// <summary>

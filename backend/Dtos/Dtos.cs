@@ -102,6 +102,13 @@ public record ForumSummaryDto(
     string AccessLabel = "所有人",
     bool Locked = false);
 
+public record SitePulseDto(
+    int TodayThreads,
+    int YesterdayThreads,
+    int TodayReplies,
+    int YesterdayReplies,
+    string TimeZone);
+
 public record LatestThreadDto(
     int Id,
     string Title,

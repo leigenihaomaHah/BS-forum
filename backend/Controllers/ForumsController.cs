@@ -78,3 +78,16 @@ public class EssenceController : ControllerBase
     public async Task<ActionResult<List<EssenceThreadDto>>> Get([FromQuery] int take = 10)
         => Ok(await _hot.GetEssenceAsync(take));
 }
+
+[ApiController]
+[Route("api/stats")]
+public class StatsController : ControllerBase
+{
+    private readonly SitePulseService _pulse;
+
+    public StatsController(SitePulseService pulse) => _pulse = pulse;
+
+    /// <summary>Public homepage pulse: today/yesterday threads & replies (China calendar day).</summary>
+    [HttpGet("pulse")]
+    public async Task<ActionResult<SitePulseDto>> Pulse() => Ok(await _pulse.GetAsync());
+}

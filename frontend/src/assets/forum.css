@@ -257,6 +257,101 @@ a:hover {
   color: var(--muted);
 }
 
+.home-pulse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.home-pulse-bar .pulse-card {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 32, 51, 0.1);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
+}
+
+.home-pulse-bar .pulse-today {
+  border-color: rgba(13, 148, 136, 0.35);
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.12), rgba(255, 255, 255, 0.95) 55%);
+}
+
+.home-pulse-bar .pulse-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.home-pulse-bar .pulse-today .pulse-label {
+  color: #0f766e;
+}
+
+.home-pulse-bar .pulse-nums {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  line-height: 1.1;
+}
+
+.home-pulse-bar .pulse-main {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ink, #142033);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.home-pulse-bar .pulse-today .pulse-main {
+  color: #0f766e;
+}
+
+.home-pulse-bar .pulse-reply {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink-soft, #334155);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-pulse-bar .pulse-unit,
+.home-pulse-bar .pulse-slash {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #7a869c);
+}
+
+.home-pulse-bar .pulse-cmp.up {
+  border-color: rgba(13, 148, 136, 0.28);
+  background: rgba(13, 148, 136, 0.06);
+}
+.home-pulse-bar .pulse-cmp.up .pulse-main { color: #0d9488; }
+.home-pulse-bar .pulse-cmp.down .pulse-main { color: #64748b; }
+
+.home-pulse-bar .pulse-muted {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed rgba(20, 32, 51, 0.12);
+  color: var(--muted, #7a869c);
+  font-size: 13px;
+  background: #fff;
+}
+
+@media (max-width: 560px) {
+  .home-pulse-bar .pulse-main { font-size: 24px; }
+  .home-pulse-bar .pulse-reply { font-size: 18px; }
+}
+
 .breadcrumb-bar a {
   color: var(--ink-soft);
 }
