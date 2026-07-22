@@ -36,7 +36,8 @@ public class ThreadService
         _settings = settings;
     }
 
-    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(int forumId, int page, int pageSize, string sort = "latest", int? viewerId = null)
+    public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(
+        int forumId, int page, int pageSize, string sort = "latest", int? viewerId = null, string? q = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
@@ -49,6 +50,14 @@ public class ThreadService
             var blocked = await _community.GetBlockedUserIdsAsync(viewerId.Value);
             if (blocked.Count > 0)
                 query = query.Where(t => !blocked.Contains(t.AuthorId));
+        }
+
+        var keyword = (q ?? string.Empty).Trim();
+        if (keyword.Length > 0)
+        {
+            query = query.Where(t =>
+                t.Title.Contains(keyword) ||
+                (t.Type != TypeCoin && t.Posts.Any(p => !p.IsDeleted && p.Content.Contains(keyword))));
         }
 
         if (sort == "essence")
@@ -68,13 +77,38 @@ public class ThreadService
             .Take(pageSize)
             .ToListAsync();
 
+        var threadIds = items.Select(t => t.Id).ToList();
+        var lastNickByThread = new Dictionary<int, string>();
+        var imageThreadIds = new HashSet<int>();
+        if (threadIds.Count > 0)
+        {
+            var replyRows = await _db.Posts.AsNoTracking()
+                .Where(p => threadIds.Contains(p.ThreadId) && !p.IsDeleted)
+                .Select(p => new { p.ThreadId, p.Floor, p.AuthorId, Nick = p.Author.Nickname })
+                .ToListAsync();
+            foreach (var g in replyRows.GroupBy(x => x.ThreadId))
+            {
+                var last = g.OrderByDescending(x => x.Floor).First();
+                lastNickByThread[g.Key] = last.Nick;
+            }
+
+            var withImg = await _db.Posts.AsNoTracking()
+                .Where(p => threadIds.Contains(p.ThreadId) && p.Floor == 1 && !p.IsDeleted
+                    && p.ImagesJson != null && p.ImagesJson != "" && p.ImagesJson != "[]")
+                .Select(p => p.ThreadId)
+                .ToListAsync();
+            imageThreadIds = withImg.ToHashSet();
+        }
+
         var list = new List<ThreadListItemDto>();
         foreach (var t in items)
         {
             var ln = await _levels.GetLevelNameAsync(t.Author.Level);
+            lastNickByThread.TryGetValue(t.Id, out var lastNick);
             list.Add(new ThreadListItemDto(
                 t.Id, t.Title, NormalizeType(t.Type), t.Views, t.ReplyCount, t.LikeCount,
-                t.CreatedAt, t.LastReplyAt, t.Author.Nickname, t.Author.Level, ln, t.IsPinned, t.IsEssence));
+                t.CreatedAt, t.LastReplyAt, t.Author.Nickname, t.Author.Level, ln, t.IsPinned, t.IsEssence,
+                t.Author.Avatar, lastNick ?? t.Author.Nickname, imageThreadIds.Contains(t.Id)));
         }
 
         return new PagedResult<ThreadListItemDto>(list, total, page, pageSize);
@@ -171,23 +205,36 @@ public class ThreadService
 
         var hideContent = !canAccess && type == TypeCoin && !purchased;
         var byId = items.ToDictionary(p => p.Id);
+        var authorIds = items.Select(p => p.AuthorId).Distinct().ToList();
+        var postCounts = await _db.Posts
+            .Where(p => authorIds.Contains(p.AuthorId) && !p.IsDeleted)
+            .GroupBy(p => p.AuthorId)
+            .Select(g => new { AuthorId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AuthorId, x => x.Count);
 
         var list = new List<PostDto>();
         foreach (var p in items)
-            list.Add(await MapPostDtoAsync(p, hideContent, byId));
+            list.Add(await MapPostDtoAsync(p, hideContent, byId, postCounts));
 
         return new PagedResult<PostDto>(list, total, page, pageSize);
     }
 
-    private async Task<AuthorBriefDto> MapAuthorAsync(User u)
+    private async Task<AuthorBriefDto> MapAuthorAsync(User u, int? postCount = null)
     {
         var ln = await _levels.GetLevelNameAsync(u.Level);
-        return new AuthorBriefDto(u.Id, u.Nickname, u.Level, ln, u.Points, u.IsEffectivelyVip(), u.AvatarFrame);
+        var count = postCount ?? await _db.Posts.CountAsync(p => p.AuthorId == u.Id && !p.IsDeleted);
+        return new AuthorBriefDto(
+            u.Id, u.Nickname, u.Level, ln, u.Points, u.IsEffectivelyVip(), u.AvatarFrame,
+            u.Avatar, count, u.CreatedAt);
     }
 
-    private async Task<PostDto> MapPostDtoAsync(Post p, bool hideContent, Dictionary<int, Post>? byId = null)
+    private async Task<PostDto> MapPostDtoAsync(
+        Post p, bool hideContent, Dictionary<int, Post>? byId = null, Dictionary<int, int>? postCounts = null)
     {
-        var author = await MapAuthorAsync(p.Author);
+        int? pc = null;
+        if (postCounts != null && postCounts.TryGetValue(p.AuthorId, out var c))
+            pc = c;
+        var author = await MapAuthorAsync(p.Author, pc);
         int? rf = null;
         string? rn = null;
         string? rc = null;

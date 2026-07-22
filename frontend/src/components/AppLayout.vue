@@ -82,11 +82,16 @@
               <span class="user-menu-caret">▾</span>
             </button>
             <div v-if="showUserMenu" class="user-menu-dropdown" @click.stop>
-              <router-link :to="`/user/${auth.user.id}`" @click="showUserMenu = false">我的主页</router-link>
-              <router-link to="/me" @click="showUserMenu = false">个人中心</router-link>
-              <router-link to="/settings" @click="showUserMenu = false">账号设置</router-link>
-              <router-link v-if="isAdmin" to="/admin" class="admin-link" @click="showUserMenu = false">管理后台</router-link>
-              <a href="#" @click.prevent="auth.logout(); showUserMenu = false">退出登录</a>
+              <button type="button" class="user-menu-item" @click="goMenu(`/user/${auth.user.id}`)">我的主页</button>
+              <button type="button" class="user-menu-item" @click="goMenu('/me')">个人中心</button>
+              <button type="button" class="user-menu-item" @click="goMenu('/settings')">账号设置</button>
+              <button
+                v-if="isAdmin"
+                type="button"
+                class="user-menu-item admin"
+                @click="goMenu('/admin')"
+              >管理后台</button>
+              <button type="button" class="user-menu-item danger" @click="logoutMenu">退出登录</button>
             </div>
           </div>
         </div>
@@ -175,6 +180,17 @@ function toggleUserMenu() {
   if (showUserMenu.value) {
     showNotif.value = false
   }
+}
+
+function goMenu(path) {
+  showUserMenu.value = false
+  router.push(path)
+}
+
+function logoutMenu() {
+  showUserMenu.value = false
+  auth.logout()
+  router.push('/')
 }
 
 function scrollToCategory(id) {
@@ -306,7 +322,7 @@ function doSearch() {
   object-fit: cover;
   display: block;
 }
-.user-menu-wrap { position: relative; z-index: 25; }
+.user-menu-wrap { position: relative; z-index: 40; }
 .user-menu-trigger {
   display: inline-flex;
   align-items: center;
@@ -334,23 +350,29 @@ function doSearch() {
   background: #fff;
   border: 1px solid rgba(20, 32, 51, 0.1);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(20, 32, 51, 0.12);
+  box-shadow: 0 12px 32px rgba(20, 32, 51, 0.16);
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  z-index: 50;
 }
-.user-menu-dropdown a {
+.user-menu-item {
   display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
   padding: 8px 10px;
   border-radius: 8px;
-  color: #142033 !important;
-  text-decoration: none !important;
+  color: #142033;
   font-size: 13px;
   font-weight: 500;
-  margin-left: 0 !important;
+  cursor: pointer;
 }
-.user-menu-dropdown a:hover { background: #f8fafc; }
+.user-menu-item:hover { background: #f8fafc; }
+.user-menu-item.admin { color: #a16207; font-weight: 700; }
+.user-menu-item.danger { color: #be123c; }
 .next-level-hint {
   display: inline-flex;
   flex-direction: column;

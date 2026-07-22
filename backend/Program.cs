@@ -14,7 +14,11 @@ builder.WebHost.ConfigureKestrel(opt =>
     opt.Limits.MaxRequestBodySize = 20 * 1024 * 1024; // images as base64 JSON
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(o =>
+{
+    o.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+    o.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeJsonConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

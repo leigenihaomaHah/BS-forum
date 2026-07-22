@@ -25,6 +25,7 @@ public static class DbSeeder
         if (await db.Users.AnyAsync())
         {
             await SyncReplyCountsAsync(db);
+            await BulkContentSeeder.EnsureAsync(db);
             return;
         }
 
@@ -166,6 +167,7 @@ public static class DbSeeder
         }
         await db.SaveChangesAsync();
         await SyncReplyCountsAsync(db);
+        await BulkContentSeeder.EnsureAsync(db);
     }
 
     /// <summary>

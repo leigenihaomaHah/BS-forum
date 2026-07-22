@@ -262,10 +262,10 @@ public class UsersController : ControllerBase
 
     [HttpGet("{id:int}/activity")]
     public async Task<ActionResult<PagedResult<ActivityItemDto>>> GetActivity(
-        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? type = null)
     {
         if (await _auth.GetProfileAsync(id) == null) return NotFound(new ApiMessage("用户不存在"));
-        return Ok(await _auth.GetActivityAsync(id, page, pageSize));
+        return Ok(await _auth.GetActivityAsync(id, page, pageSize, type));
     }
 
     [Authorize]

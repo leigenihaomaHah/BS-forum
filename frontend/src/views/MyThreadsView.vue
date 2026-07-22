@@ -10,7 +10,12 @@
       <div v-if="loading" class="p-3 text-muted">加载中...</div>
       <template v-else>
         <div v-if="!items.length" class="p-3 text-muted">暂无帖子</div>
-        <div v-for="t in items" :key="t.id" class="thread-row">
+        <div
+          v-for="t in items"
+          :key="t.id"
+          class="thread-row"
+          :class="{ 'is-pinned': t.isPinned, 'is-essence': t.isEssence }"
+        >
           <div class="title">
             <router-link :to="`/thread/${t.id}`">{{ t.title }}</router-link>
             <span v-if="t.isPinned" class="type-badge type-pin">置顶</span>

@@ -140,105 +140,241 @@
         </div>
       </div>
 
+      <div v-if="filterAuthorId" class="author-filter-bar mb-3">
+        正在只看该作者的回复
+        <button type="button" class="btn-link" @click="filterAuthorId = null">显示全部</button>
+      </div>
+
       <div
-        v-for="post in posts"
+        v-for="post in rootPosts"
         :key="post.id"
         :id="`floor-${post.floor}`"
         class="post-card"
         :class="{ 'post-deleted': post.deleted }"
       >
-        <div class="post-side">
-          <router-link :to="`/user/${post.author.id}`">
+        <aside class="post-side">
+          <router-link :to="`/user/${post.author.id}`" class="post-side-avatar">
             <span class="avatar-frame" :class="'frame-' + (post.author.avatarFrame || '')">
-              <img :src="post.author.avatar || defaultAvatar(post.author.nickname)" class="post-avatar" />
+              <img :src="post.author.avatar || defaultAvatar(post.author.nickname)" class="post-avatar" alt="" />
             </span>
           </router-link>
-          <div class="fw-bold mb-1" style="font-size: 13px">
-            <router-link :to="`/user/${post.author.id}`">{{ post.author.nickname }}</router-link>
-          </div>
-          <span
-            class="level-badge"
-            :class="{ 'lv-high': post.author.level >= 5 }"
-          >Lv.{{ post.author.level }} {{ post.author.levelName }}</span>
-          <div class="text-muted mt-2" style="font-size: 12px">积分 {{ post.author.points }}</div>
-        </div>
-        <div class="post-body">
-          <div class="post-floor">
-            #{{ post.floor }} · {{ formatTime(post.createdAt) }}
-            <span v-if="post.editedAt" class="text-muted" style="font-size:11px">（已编辑）</span>
-            <span class="post-actions">
-              <button
-                v-if="auth.user?.id === post.author.id && !post.deleted && post.floor > 1"
-                class="post-action-btn"
-                @click="startEdit(post)"
-              >编辑</button>
-              <button
-                v-if="thread.canEdit && !post.deleted && post.floor === 1 && !editingThread"
-                class="post-action-btn"
-                @click="startEditThread"
-              >编辑</button>
-              <button v-if="auth.user?.id === post.author.id && !post.deleted && post.floor > 1" class="post-action-btn" @click="deletePost(post)">删除</button>
-              <button v-if="auth.isLoggedIn && !post.deleted" class="post-action-btn" @click="quotePost(post)">引用</button>
-              <button v-if="auth.isLoggedIn && !post.deleted" class="post-action-btn" @click="reportPost(post)">举报</button>
-            </span>
+          <ul class="post-side-stats">
+            <li><span>等级</span><b>Lv.{{ post.author.level }}</b></li>
+            <li><span>帖子</span><b>{{ post.author.postCount ?? 0 }}</b></li>
+            <li><span>积分</span><b>{{ post.author.points }}</b></li>
+            <li v-if="post.author.createdAt"><span>注册</span><b>{{ formatTime(post.author.createdAt, false) }}</b></li>
+          </ul>
+        </aside>
+
+        <div class="post-main">
+          <div class="post-head">
+            <div class="post-head-left">
+              <router-link class="post-nick" :to="`/user/${post.author.id}`">{{ post.author.nickname }}</router-link>
+              <span
+                class="level-badge"
+                :class="{ 'lv-high': post.author.level >= 5 }"
+              >Lv.{{ post.author.level }} {{ post.author.levelName }}</span>
+              <span class="post-time">发表于 {{ formatTime(post.createdAt) }}</span>
+              <span v-if="post.editedAt" class="post-edited">（已编辑）</span>
+            </div>
+            <div class="post-head-right">
+              <button type="button" class="post-head-link" @click="filterAuthorId = post.author.id">只看该作者</button>
+              <span class="post-floor-tag">#{{ post.floor }}楼</span>
+            </div>
           </div>
 
-          <!-- Edit mode (reply) -->
-          <template v-if="editingPost?.id === post.id && !(editingThread && post.floor === 1)">
-            <MarkdownEditor v-model="editContent" class="mb-2" :compact="true" :rows="4" :hint="mdHint" />
-            <div class="d-flex gap-2 mb-2">
-              <button class="btn btn-forum btn-sm" :disabled="savingEdit" @click="saveEdit(post)">{{ savingEdit ? '保存中...' : '保存' }}</button>
-              <button class="btn btn-outline-modern btn-sm" @click="cancelEdit">取消</button>
-            </div>
-          </template>
-
-          <!-- Edit theme (floor 1) -->
-          <template v-else-if="editingThread && post.floor === 1">
-            <MarkdownEditor v-model="editThreadContent" class="mb-2" :rows="6" :hint="mdHint" />
-            <div v-if="editThreadError" class="text-danger mb-2" style="font-size:12px">{{ editThreadError }}</div>
-            <div class="d-flex gap-2 mb-2">
-              <button class="btn btn-forum btn-sm" :disabled="savingThread" @click="saveThread">{{ savingThread ? '保存中...' : '保存主题' }}</button>
-              <button class="btn btn-outline-modern btn-sm" @click="cancelEditThread">取消</button>
-            </div>
-          </template>
-
-          <!-- Display mode -->
-          <template v-else>
-            <div v-if="post.deleted" class="text-muted" style="font-style:italic">该回复已被删除</div>
-            <div v-else-if="post.hidden" class="hidden-post-box">
-              <div class="hidden-post-icon">💰</div>
-              <div class="hidden-post-text">此内容需购买后查看</div>
-              <div class="hidden-post-price">花费 {{ thread.coinPrice }} 金币购买后可查看完整内容及参与回复</div>
-              <div v-if="!auth.isLoggedIn" class="text-muted mt-1" style="font-size:13px">
-                请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后购买
+          <div class="post-content">
+            <template v-if="editingPost?.id === post.id && !(editingThread && post.floor === 1)">
+              <MarkdownEditor v-model="editContent" class="mb-2" :compact="true" :rows="4" :hint="mdHint" />
+              <div class="d-flex gap-2 mb-2">
+                <button class="btn btn-forum btn-sm" :disabled="savingEdit" @click="saveEdit(post)">{{ savingEdit ? '保存中...' : '保存' }}</button>
+                <button class="btn btn-outline-modern btn-sm" @click="cancelEdit">取消</button>
               </div>
-              <button v-else :disabled="purchasing" class="btn btn-forum btn-sm mt-1" @click="purchaseThread">
-                {{ purchasing ? '处理中...' : `花费 ${thread.coinPrice} 金币购买` }}
-              </button>
-              <div v-if="purchaseError" class="text-danger mt-1" style="font-size:12px">{{ purchaseError }}</div>
-            </div>
-            <div v-else>
-              <div v-if="post.replyToFloor" class="quote-box mb-2">
-                引用
-                <a href="#" @click.prevent="scrollToFloor(post.replyToFloor)">#{{ post.replyToFloor }}</a>
-                {{ post.replyToNickname }}：{{ post.replyToContent }}
+            </template>
+            <template v-else-if="editingThread && post.floor === 1">
+              <MarkdownEditor v-model="editThreadContent" class="mb-2" :rows="6" :hint="mdHint" />
+              <div v-if="editThreadError" class="text-danger mb-2" style="font-size:12px">{{ editThreadError }}</div>
+              <div class="d-flex gap-2 mb-2">
+                <button class="btn btn-forum btn-sm" :disabled="savingThread" @click="saveThread">{{ savingThread ? '保存中...' : '保存主题' }}</button>
+                <button class="btn btn-outline-modern btn-sm" @click="cancelEditThread">取消</button>
               </div>
-              <MarkdownBody :content="post.content" />
-            </div>
-          </template>
+            </template>
+            <template v-else>
+              <div v-if="post.deleted" class="text-muted" style="font-style:italic">该回复已被删除</div>
+              <div v-else-if="post.hidden" class="hidden-post-box">
+                <div class="hidden-post-icon">💰</div>
+                <div class="hidden-post-text">此内容需购买后查看</div>
+                <div class="hidden-post-price">花费 {{ thread.coinPrice }} 金币购买后可查看完整内容及参与回复</div>
+                <div v-if="!auth.isLoggedIn" class="text-muted mt-1" style="font-size:13px">
+                  请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后购买
+                </div>
+                <button v-else :disabled="purchasing" class="btn btn-forum btn-sm mt-1" @click="purchaseThread">
+                  {{ purchasing ? '处理中...' : `花费 ${thread.coinPrice} 金币购买` }}
+                </button>
+                <div v-if="purchaseError" class="text-danger mt-1" style="font-size:12px">{{ purchaseError }}</div>
+              </div>
+              <div v-else>
+                <div v-if="post.replyToFloor" class="quote-box mb-2">
+                  引用
+                  <a href="#" @click.prevent="scrollToFloor(post.replyToFloor)">#{{ post.replyToFloor }}</a>
+                  {{ post.replyToNickname }}：{{ post.replyToContent }}
+                </div>
+                <MarkdownBody :content="post.content" />
+              </div>
+            </template>
 
-          <!-- Image grid -->
-          <div v-if="post.images?.length && !post.deleted" class="img-grid">
+            <div v-if="post.images?.length && !post.deleted" class="img-grid">
+              <div
+                v-for="(img, idx) in post.images"
+                :key="idx"
+                class="img-grid-item"
+                @click="openLightbox(post.images, idx)"
+              >
+                <img :src="img" alt="" loading="lazy" />
+                <div v-if="post.images.length > 4 && idx === 3" class="img-more">
+                  +{{ post.images.length - 4 }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="post-foot">
+            <button
+              v-if="auth.user?.id === post.author.id && !post.deleted && post.floor > 1"
+              type="button"
+              class="post-foot-btn"
+              @click="startEdit(post)"
+            >编辑</button>
+            <button
+              v-if="thread.canEdit && !post.deleted && post.floor === 1 && !editingThread"
+              type="button"
+              class="post-foot-btn"
+              @click="startEditThread"
+            >编辑</button>
+            <button
+              v-if="auth.user?.id === post.author.id && !post.deleted && post.floor > 1"
+              type="button"
+              class="post-foot-btn"
+              @click="deletePost(post)"
+            >删除</button>
+            <button
+              v-if="auth.isLoggedIn && !post.deleted && !thread.repliesLocked"
+              type="button"
+              class="post-foot-btn"
+              @click="toggleInlineReply(post)"
+            >回复{{ childrenOf(post.id).length ? `(${childrenOf(post.id).length})` : '' }}</button>
+            <button
+              v-if="auth.isLoggedIn && !post.deleted"
+              type="button"
+              class="post-foot-btn"
+              @click="reportPost(post)"
+            >举报</button>
+          </div>
+
+          <!-- Nested replies -->
+          <div v-if="childrenOf(post.id).length || inlineReplyParentId === post.id" class="nested-box">
             <div
-              v-for="(img, idx) in post.images"
-              :key="idx"
-              class="img-grid-item"
-              @click="openLightbox(post.images, idx)"
+              v-for="child in visibleChildren(post.id)"
+              :key="child.id"
+              :id="`floor-${child.floor}`"
+              class="nested-item"
+              :class="{ 'nested-deleted': child.deleted }"
             >
-              <img :src="img" alt="" loading="lazy" />
-              <div v-if="post.images.length > 4 && idx === 3" class="img-more">
-                +{{ post.images.length - 4 }}
+              <img
+                class="nested-avatar"
+                :src="child.author.avatar || defaultAvatar(child.author.nickname)"
+                alt=""
+              />
+              <div class="nested-body">
+                <div class="nested-meta">
+                  <router-link class="nested-nick" :to="`/user/${child.author.id}`">{{ child.author.nickname }}</router-link>
+                  <span class="nested-reply-to">回复</span>
+                  <router-link
+                    v-if="replyTargetAuthorId(child, post)"
+                    class="nested-nick"
+                    :to="`/user/${replyTargetAuthorId(child, post)}`"
+                  >{{ replyTargetName(child, post) }}</router-link>
+                  <span v-else class="nested-nick-plain">{{ replyTargetName(child, post) }}</span>
+                  <span class="nested-time">发表于 {{ formatTime(child.createdAt) }}</span>
+                </div>
+                <div v-if="child.deleted" class="nested-text text-muted" style="font-style:italic">该回复已被删除</div>
+                <div v-else class="nested-text">
+                  <MarkdownBody :content="child.content" />
+                </div>
+                <div v-if="child.images?.length && !child.deleted" class="img-grid nested-imgs">
+                  <div
+                    v-for="(img, idx) in child.images"
+                    :key="idx"
+                    class="img-grid-item"
+                    @click="openLightbox(child.images, idx)"
+                  >
+                    <img :src="img" alt="" loading="lazy" />
+                  </div>
+                </div>
+                <div class="nested-actions">
+                  <button
+                    v-if="auth.isLoggedIn && !child.deleted && !thread.repliesLocked"
+                    type="button"
+                    class="post-foot-btn"
+                    @click="toggleInlineReply(child, post.id)"
+                  >回复</button>
+                  <button
+                    v-if="auth.isLoggedIn && !child.deleted"
+                    type="button"
+                    class="post-foot-btn"
+                    @click="reportPost(child)"
+                  >举报</button>
+                </div>
               </div>
+            </div>
+
+            <button
+              v-if="hiddenChildCount(post.id) > 0 && !isNestedExpanded(post.id)"
+              type="button"
+              class="nested-more"
+              @click="expandNested(post.id)"
+            >查看更多（{{ hiddenChildCount(post.id) }} 条）</button>
+            <button
+              v-else-if="isNestedExpanded(post.id) && childrenOf(post.id).length > NESTED_PREVIEW"
+              type="button"
+              class="nested-more"
+              @click="collapseNested(post.id)"
+            >收起</button>
+
+            <div v-if="inlineReplyParentId === post.id" class="inline-reply">
+              <div v-if="!auth.isLoggedIn" class="text-muted" style="font-size:13px">
+                请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后回复
+              </div>
+              <div v-else-if="auth.user?.isMuted" class="text-warning" style="font-size:13px">账号已被禁言，暂时无法回帖</div>
+              <template v-else>
+                <div v-if="inlineReplyTo" class="quote-pending mb-2">
+                  回复 #{{ inlineReplyTo.floor }} {{ inlineReplyTo.author.nickname }}
+                  <button type="button" class="btn-link" @click="setInlineTargetToRoot(post)">改为回复本楼</button>
+                </div>
+                <MarkdownEditor v-model="inlineReply" class="mb-2" :compact="true" :rows="3" :hint="mdHint" placeholder="说点什么…" />
+                <div class="reply-images mb-2">
+                  <div class="reply-img-list">
+                    <div v-for="(img, idx) in inlineImages" :key="idx" class="reply-img-item">
+                      <img :src="img" class="reply-img-thumb" alt="" />
+                      <button type="button" class="reply-img-remove" @click="inlineImages.splice(idx, 1)">&times;</button>
+                    </div>
+                    <label v-if="inlineImages.length < 8" class="reply-img-add">
+                      <input type="file" accept="image/*" multiple hidden @change="addInlineImages" />
+                      <span>+</span>
+                    </label>
+                  </div>
+                </div>
+                <div v-if="inlineError" class="text-danger mb-2" style="font-size:12px">{{ inlineError }}</div>
+                <div class="d-flex gap-2 align-items-center">
+                  <button class="btn btn-forum btn-sm" :disabled="inlineSubmitting" @click="submitInlineReply(post)">
+                    {{ inlineSubmitting ? '提交中...' : '发表' }}
+                  </button>
+                  <button type="button" class="btn btn-outline-modern btn-sm" @click="closeInlineReply">取消</button>
+                </div>
+              </template>
+            </div>
+            <div v-else-if="auth.isLoggedIn && !thread.repliesLocked && !post.deleted" class="nested-say">
+              <button type="button" class="btn-say" @click="toggleInlineReply(post)">我也来说说</button>
             </div>
           </div>
         </div>
@@ -250,14 +386,14 @@
         <button class="btn btn-sm btn-outline-secondary" :disabled="postPage >= postTotalPages || loadingPosts" @click="loadPosts(postPage + 1)">下一页</button>
       </div>
 
-      <div v-if="!thread.repliesLocked" class="panel">
+      <div id="thread-reply-box" v-if="!thread.repliesLocked" class="panel">
         <div class="panel-header"><span class="accent"></span>发表回复</div>
         <div class="p-3">
           <div v-if="!auth.isLoggedIn" class="text-muted">
             请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后回帖（回帖 +2 积分、+2 金币）
           </div>
           <div v-else-if="auth.user?.isMuted" class="text-warning">
-            账号已被禁言{{ auth.user.mutedUntil ? '，至 ' + new Date(auth.user.mutedUntil).toLocaleString() : '' }}，暂时无法回帖
+            账号已被禁言{{ auth.user.mutedUntil ? '，至 ' + formatTime(auth.user.mutedUntil) : '' }}，暂时无法回帖
           </div>
           <template v-else>
             <div v-if="replyTo" class="quote-pending mb-2">
@@ -286,6 +422,13 @@
           </template>
         </div>
       </div>
+
+      <Teleport to="body">
+        <div class="thread-float-nav" aria-label="快速跳转">
+          <button type="button" title="回到顶部" @click="scrollPageTop">↑</button>
+          <button type="button" title="去底部回帖" @click="scrollPageBottom">↓</button>
+        </div>
+      </Teleport>
     </template>
 
     <!-- Lightbox -->
@@ -339,6 +482,90 @@ const replyTextarea = ref(null)
 const replyTo = ref(null)
 const voting = ref(false)
 const mdHint = markdownHint()
+const filterAuthorId = ref(null)
+
+const inlineReplyParentId = ref(null)
+const inlineReplyTo = ref(null)
+const inlineReply = ref('')
+const inlineImages = ref([])
+const inlineError = ref('')
+const inlineSubmitting = ref(false)
+
+const visiblePosts = computed(() => {
+  if (!filterAuthorId.value) return posts.value
+  return posts.value.filter((p) => p.author?.id === filterAuthorId.value)
+})
+
+const postIdSet = computed(() => new Set(visiblePosts.value.map((p) => p.id)))
+
+/** 主楼：无引用，或引用目标不在本页列表中 */
+const rootPosts = computed(() =>
+  visiblePosts.value.filter((p) => !p.replyToPostId || !postIdSet.value.has(p.replyToPostId))
+)
+
+function childrenOf(rootId) {
+  const byParent = new Map()
+  for (const p of visiblePosts.value) {
+    if (!p.replyToPostId) continue
+    if (!byParent.has(p.replyToPostId)) byParent.set(p.replyToPostId, [])
+    byParent.get(p.replyToPostId).push(p)
+  }
+  const out = []
+  const queue = [...(byParent.get(rootId) || [])]
+  const seen = new Set()
+  while (queue.length) {
+    const cur = queue.shift()
+    if (seen.has(cur.id)) continue
+    seen.add(cur.id)
+    out.push(cur)
+    for (const next of byParent.get(cur.id) || []) queue.push(next)
+  }
+  out.sort((a, b) => a.floor - b.floor)
+  return out
+}
+
+const NESTED_PREVIEW = 5
+const nestedExpanded = ref({})
+
+function isNestedExpanded(rootId) {
+  return !!nestedExpanded.value[rootId]
+}
+
+function visibleChildren(rootId) {
+  const all = childrenOf(rootId)
+  if (isNestedExpanded(rootId) || all.length <= NESTED_PREVIEW) return all
+  return all.slice(0, NESTED_PREVIEW)
+}
+
+function hiddenChildCount(rootId) {
+  return Math.max(0, childrenOf(rootId).length - NESTED_PREVIEW)
+}
+
+function expandNested(rootId) {
+  nestedExpanded.value = { ...nestedExpanded.value, [rootId]: true }
+}
+
+function collapseNested(rootId) {
+  nestedExpanded.value = { ...nestedExpanded.value, [rootId]: false }
+}
+
+/** 楼中楼「回复谁」：始终展示目标昵称 */
+function replyTargetName(child, rootPost) {
+  if (child.replyToNickname) return child.replyToNickname
+  return rootPost?.author?.nickname || '楼主'
+}
+
+function replyTargetAuthorId(child, rootPost) {
+  if (child.replyToPostId) {
+    const target = posts.value.find((p) => p.id === child.replyToPostId)
+    if (target?.author?.id) return target.author.id
+  }
+  return rootPost?.author?.id || null
+}
+
+function setInlineTargetToRoot(rootPost) {
+  inlineReplyTo.value = rootPost
+}
 
 const lightboxOpen = ref(false)
 const lightboxImages = ref([])
@@ -405,6 +632,9 @@ async function load() {
   loading.value = true
   vipDenied.value = ''
   posts.value = []
+  filterAuthorId.value = null
+  nestedExpanded.value = {}
+  closeInlineReply()
   try {
     const { data } = await api.get(`/threads/${route.params.id}`)
     thread.value = data
@@ -550,13 +780,108 @@ async function deletePost(post) {
 }
 
 function quotePost(post) {
-  replyTo.value = post
-  replyTextarea.value?.focus()
+  toggleInlineReply(post)
+}
+
+function toggleInlineReply(post, nestUnderRootId = null) {
+  if (!auth.isLoggedIn) {
+    authModal.openLogin()
+    return
+  }
+  const rootId = nestUnderRootId || post.id
+  // 若点的是子回复，挂在主楼下打开，并标记回复对象
+  const parentRoot = nestUnderRootId
+    ? posts.value.find((p) => p.id === nestUnderRootId)
+    : post
+  if (inlineReplyParentId.value === (parentRoot?.id || rootId) && inlineReplyTo.value?.id === post.id) {
+    closeInlineReply()
+    return
+  }
+  inlineReplyParentId.value = parentRoot?.id || post.id
+  inlineReplyTo.value = post
+  inlineReply.value = ''
+  inlineImages.value = []
+  inlineError.value = ''
+}
+
+function closeInlineReply() {
+  inlineReplyParentId.value = null
+  inlineReplyTo.value = null
+  inlineReply.value = ''
+  inlineImages.value = []
+  inlineError.value = ''
+}
+
+function addInlineImages(e) {
+  const files = Array.from(e.target.files || [])
+  const remaining = 8 - inlineImages.value.length
+  for (const file of files.slice(0, remaining)) {
+    if (file.size > 10 * 1024 * 1024) {
+      inlineError.value = `"${file.name}" 超过 10MB 限制`
+      continue
+    }
+    compressImage(file, 1920, 0.85).then((dataUrl) => {
+      inlineImages.value.push(dataUrl)
+    })
+  }
+  e.target.value = ''
+}
+
+async function submitInlineReply(rootPost) {
+  inlineError.value = ''
+  const text = inlineReply.value.trim()
+  if (!text && !inlineImages.value.length) {
+    inlineError.value = '请输入内容或添加图片'
+    return
+  }
+  if (!inlineImages.value.length && text.length < minReplyLength) {
+    inlineError.value = `回帖内容至少 ${minReplyLength} 个字`
+    return
+  }
+  inlineSubmitting.value = true
+  let images = []
+  if (inlineImages.value.length > 0) {
+    try {
+      images = await uploadImages([...inlineImages.value])
+    } catch (e) {
+      inlineError.value = '图片上传失败：' + e.message
+      inlineSubmitting.value = false
+      return
+    }
+  }
+  try {
+    const target = inlineReplyTo.value || rootPost
+    const { data } = await api.post(`/threads/${route.params.id}/replies`, {
+      content: inlineReply.value,
+      images,
+      replyToPostId: target.id,
+    })
+    posts.value.push(data)
+    postTotal.value += 1
+    thread.value.replyCount += 1
+    closeInlineReply()
+    // 保持楼中楼展开：再打开空表单可选；这里关闭即可
+    await auth.fetchMe()
+  } catch (e) {
+    inlineError.value = e.message
+  } finally {
+    inlineSubmitting.value = false
+  }
 }
 
 function scrollToFloor(floor) {
   const el = document.getElementById(`floor-${floor}`)
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function scrollPageTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function scrollPageBottom() {
+  const box = document.getElementById('thread-reply-box')
+  if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  else window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })
 }
 
 async function reportPost(post) {
@@ -714,23 +1039,32 @@ function shareThread() {
 
 onMounted(async () => {
   await load()
+  const startPage = Number(route.query.p) || 1
+  if (startPage > 1 && thread.value && !thread.value.restricted) {
+    await loadPosts(startPage)
+  }
   const floor = Number(route.query.floor) || Number(String(route.hash || '').replace(/^#floor-/, ''))
   if (floor > 0) {
     setTimeout(() => scrollToFloor(floor), 80)
   }
 })
 watch(() => route.params.id, load)
+watch(() => route.query.p, async (p) => {
+  const n = Number(p) || 1
+  if (thread.value && !thread.value.restricted && n !== postPage.value) {
+    await loadPosts(n)
+  }
+})
 </script>
 
 <style scoped>
-/* Avatar */
+/* Avatar (nested / fallback) */
 .post-avatar {
   width: 48px;
   height: 48px;
   border-radius: 12px;
   object-fit: cover;
   display: block;
-  margin-bottom: 8px;
 }
 
 /* Restricted panel */

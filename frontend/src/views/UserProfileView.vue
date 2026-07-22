@@ -145,6 +145,7 @@
                 @click="activeTab = 'favorites'"
               >收藏</button>
               <button class="tab-btn" :class="{ active: activeTab === 'activity' }" @click="activeTab = 'activity'">动态</button>
+              <button class="tab-btn" :class="{ active: activeTab === 'replies' }" @click="activeTab = 'replies'">回复</button>
             </div>
           </div>
 
@@ -183,7 +184,7 @@
             <div v-else class="p-0">
               <div v-for="(a, idx) in activities" :key="idx" class="purchase-row">
                 <div class="purchase-info">
-                  <router-link :to="`/thread/${a.threadId}`" class="purchase-title">{{ a.threadTitle }}</router-link>
+                  <router-link :to="activityLink(a)" class="purchase-title">{{ a.threadTitle }}</router-link>
                   <div class="purchase-meta">
                     <span :class="a.type === 'thread' ? 'text-accent' : ''">
                       {{ a.type === 'thread' ? '发帖' : '回复' }}
@@ -194,6 +195,41 @@
                 </div>
               </div>
               <PaginationComp v-model="actPage" :total-pages="actTotalPages" />
+            </div>
+          </div>
+
+          <div v-if="activeTab === 'replies'">
+            <div v-if="replyLoading" class="p-3 text-muted">加载中...</div>
+            <div v-else-if="!replies.length" class="p-3 text-muted">暂无回复</div>
+            <div v-else class="profile-reply-list">
+              <router-link
+                v-for="(r, idx) in replies"
+                :key="idx"
+                class="profile-reply-item"
+                :to="activityLink(r)"
+              >
+                <img
+                  class="profile-reply-avatar"
+                  :src="r.authorAvatar || profile.avatar || defaultAvatar(r.authorNickname || profile.nickname)"
+                  alt=""
+                />
+                <div class="profile-reply-body">
+                  <div class="profile-reply-meta">
+                    <span class="profile-reply-nick">{{ r.authorNickname || profile.nickname }}</span>
+                    <template v-if="r.replyToNickname">
+                      <span class="profile-reply-to">回复</span>
+                      <span class="profile-reply-nick">{{ r.replyToNickname }}</span>
+                    </template>
+                    <span class="profile-reply-time">发表于 {{ formatTime(r.createdAt) }}</span>
+                  </div>
+                  <div class="profile-reply-content">{{ r.content }}</div>
+                  <div class="profile-reply-thread">
+                    来自：{{ r.forumName }} · {{ r.threadTitle }}
+                    <span v-if="r.floor"> · #{{ r.floor }}楼</span>
+                  </div>
+                </div>
+              </router-link>
+              <PaginationComp v-model="replyPage" :total-pages="replyTotalPages" />
             </div>
           </div>
         </div>
@@ -243,12 +279,23 @@ const actPage = ref(1)
 const actTotal = ref(0)
 const actTotalPages = computed(() => Math.max(1, Math.ceil(actTotal.value / pageSize)))
 
+const replies = ref([])
+const replyLoading = ref(false)
+const replyPage = ref(1)
+const replyTotal = ref(0)
+const replyTotalPages = computed(() => Math.max(1, Math.ceil(replyTotal.value / pageSize)))
+
 const isSelf = computed(() => auth.user?.id === Number(route.params.id))
 const showPrivateTabs = computed(() => isSelf.value)
 
 const currentLevel = computed(() => profile.value ? getLevel(profile.value.points) : getLevels()[0])
 const nextLevel = computed(() => profile.value ? getNextLevel(profile.value.points) : null)
 const progressPct = computed(() => profile.value ? getLevelProgress(profile.value.points) : 0)
+
+function activityLink(a) {
+  if (a?.floor > 1) return `/thread/${a.threadId}?floor=${a.floor}`
+  return `/thread/${a.threadId}`
+}
 
 async function loadPurchases(p) {
   if (p) purchasesPage.value = p
@@ -301,6 +348,23 @@ async function loadActivity(p) {
   }
 }
 
+async function loadReplies(p) {
+  if (p) replyPage.value = p
+  replyLoading.value = true
+  try {
+    const { data } = await api.get(`/users/${route.params.id}/activity`, {
+      params: { page: replyPage.value, pageSize, type: 'reply' },
+    })
+    replies.value = data.items || []
+    replyTotal.value = data.total || 0
+  } catch {
+    replies.value = []
+    replyTotal.value = 0
+  } finally {
+    replyLoading.value = false
+  }
+}
+
 async function loadTab(tab, resetPage = false) {
   if (tab === 'purchases') {
     if (!showPrivateTabs.value) return
@@ -310,6 +374,9 @@ async function loadTab(tab, resetPage = false) {
     if (!showPrivateTabs.value) return
     if (resetPage && favPage.value !== 1) favPage.value = 1
     else await loadFavorites()
+  } else if (tab === 'replies') {
+    if (resetPage && replyPage.value !== 1) replyPage.value = 1
+    else await loadReplies()
   } else if (resetPage && actPage.value !== 1) {
     actPage.value = 1
   } else {
@@ -367,6 +434,7 @@ watch(activeTab, (tab) => loadTab(tab, true))
 watch(purchasesPage, () => { if (activeTab.value === 'purchases') loadPurchases() })
 watch(favPage, () => { if (activeTab.value === 'favorites') loadFavorites() })
 watch(actPage, () => { if (activeTab.value === 'activity') loadActivity() })
+watch(replyPage, () => { if (activeTab.value === 'replies') loadReplies() })
 onMounted(load)
 watch(() => route.params.id, load)
 </script>
@@ -537,6 +605,76 @@ watch(() => route.params.id, load)
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.profile-reply-list {
+  padding: 4px 0 8px;
+}
+.profile-reply-item {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(20, 32, 51, 0.06);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+}
+.profile-reply-item:hover {
+  background: rgba(13, 148, 136, 0.03);
+}
+.profile-reply-item:last-child {
+  border-bottom: none;
+}
+.profile-reply-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.profile-reply-body {
+  flex: 1;
+  min-width: 0;
+}
+.profile-reply-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.profile-reply-nick {
+  font-weight: 700;
+  color: #2563eb;
+}
+.profile-reply-to {
+  color: #94a3b8;
+  font-weight: 400;
+}
+.profile-reply-time {
+  color: #94a3b8;
+  font-size: 12px;
+}
+.profile-reply-content {
+  color: #1e293b;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.profile-reply-thread {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-reply-item:hover .profile-reply-thread {
+  color: #0d9488;
 }
 
 .text-accent { color: #0d9488; }

@@ -319,14 +319,24 @@ public class AuthService
             badges, followers, following, followed);
     }
 
-    public async Task<PagedResult<ActivityItemDto>> GetActivityAsync(int userId, int page = 1, int pageSize = 10)
+    public async Task<PagedResult<ActivityItemDto>> GetActivityAsync(
+        int userId, int page = 1, int pageSize = 10, string? type = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
+        var kind = (type ?? "").Trim().ToLowerInvariant();
 
         var query = _db.Posts
+            .Include(p => p.Author)
             .Include(p => p.Thread).ThenInclude(t => t.Forum)
-            .Where(p => p.AuthorId == userId);
+            .Include(p => p.Thread).ThenInclude(t => t.Author)
+            .Include(p => p.ReplyToPost!).ThenInclude(r => r.Author)
+            .Where(p => p.AuthorId == userId && !p.IsDeleted && !p.Thread.IsHidden && !p.Thread.PendingReview);
+
+        if (kind == "reply")
+            query = query.Where(p => p.Floor > 1);
+        else if (kind is "thread" or "post")
+            query = query.Where(p => p.Floor == 1);
 
         var total = await query.CountAsync();
         var posts = await query
@@ -335,13 +345,30 @@ public class AuthService
             .Take(pageSize)
             .ToListAsync();
 
-        var items = posts.Select(p => new ActivityItemDto(
-            p.Floor == 1 ? "thread" : "reply",
-            p.ThreadId,
-            p.Thread.Title,
-            p.Thread.Forum.Name,
-            p.Content.Length > 200 ? p.Content[..200] : p.Content,
-            p.CreatedAt)).ToList();
+        var items = posts.Select(p =>
+        {
+            var content = p.Content ?? "";
+            if (content.Length > 200) content = content[..200] + "…";
+            string? replyTo = null;
+            if (p.Floor > 1)
+            {
+                replyTo = p.ReplyToPost?.Author?.Nickname;
+                if (string.IsNullOrWhiteSpace(replyTo))
+                    replyTo = p.Thread.Author?.Nickname ?? "楼主";
+            }
+            return new ActivityItemDto(
+                p.Floor == 1 ? "thread" : "reply",
+                p.ThreadId,
+                p.Thread.Title,
+                p.Thread.Forum.Name,
+                content,
+                p.CreatedAt,
+                p.Id,
+                p.Floor,
+                replyTo,
+                p.Author.Nickname,
+                p.Author.Avatar);
+        }).ToList();
 
         return new PagedResult<ActivityItemDto>(items, total, page, pageSize);
     }

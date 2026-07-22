@@ -123,7 +123,10 @@ public record ThreadListItemDto(
     int AuthorLevel,
     string AuthorLevelName,
     bool IsPinned,
-    bool IsEssence);
+    bool IsEssence,
+    string? AuthorAvatar = null,
+    string? LastReplyNickname = null,
+    bool HasImage = false);
 
 public record PagedResult<T>(List<T> Items, int Total, int Page, int PageSize);
 
@@ -159,7 +162,10 @@ public record AuthorBriefDto(
     string LevelName,
     int Points,
     bool IsVip = false,
-    string? AvatarFrame = null);
+    string? AvatarFrame = null,
+    string? Avatar = null,
+    int PostCount = 0,
+    DateTime? CreatedAt = null);
 
 public record PostDto(
     int Id,
@@ -345,7 +351,12 @@ public record ActivityItemDto(
     string ThreadTitle,
     string ForumName,
     string? Content,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    int PostId = 0,
+    int Floor = 0,
+    string? ReplyToNickname = null,
+    string? AuthorNickname = null,
+    string? AuthorAvatar = null);
 
 public record ApiMessage(string Message);
 
