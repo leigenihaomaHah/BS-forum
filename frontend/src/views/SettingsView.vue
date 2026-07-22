@@ -93,7 +93,7 @@
           <div v-for="u in blockedUsers" :key="u.id" class="blocked-row">
             <router-link :to="`/user/${u.id}`" class="fw-bold" style="font-size:13px;color:#142033;text-decoration:none">{{ u.nickname }}</router-link>
             <span class="text-muted ms-2" style="font-size:12px">@{{ u.username }}</span>
-            <button class="btn btn-sm btn-outline-secondary ms-auto" @click="unblock(u.id)">取消屏蔽</button>
+            <button class="btn-outline-modern ms-auto" @click="unblock(u.id)">取消屏蔽</button>
           </div>
         </div>
       </div>
@@ -107,12 +107,14 @@ import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 import { passwordError } from '../utils/password.js'
 import { compressImage } from '../utils/image.js'
 import { defaultAvatar } from '../utils/avatar.js'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const toast = useToastStore()
 const saving = ref(false)
 const saveError = ref('')
 const saveSuccess = ref('')
@@ -145,7 +147,8 @@ async function unblock(id) {
   try {
     await api.delete(`/users/${id}/block`)
     blockedUsers.value = blockedUsers.value.filter(u => u.id !== id)
-  } catch (e) { saveError.value = e.message }
+    toast.success('已取消屏蔽')
+  } catch (e) { toast.error(e.message) }
 }
 
 onMounted(() => {

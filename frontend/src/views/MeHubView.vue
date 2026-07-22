@@ -22,7 +22,40 @@
             </div>
             <div class="hub-assets">积分 {{ auth.user.points }} · 金币 {{ auth.user.coins }}</div>
           </div>
-          <router-link to="/settings" class="btn btn-sm btn-outline-secondary ms-auto">账号设置</router-link>
+          <router-link to="/settings" class="btn-outline-modern ms-auto">账号设置</router-link>
+        </div>
+      </div>
+
+      <div class="panel mb-3 today-panel">
+        <div class="panel-header">
+          <span><span class="accent"></span>今日面板</span>
+          <router-link to="/sign-in" class="today-link">去签到/任务</router-link>
+        </div>
+        <div class="today-grid">
+          <router-link to="/sign-in" class="today-chip" :class="{ done: today.signedIn }">
+            <div class="chip-label">签到</div>
+            <div class="chip-value">{{ today.signedIn ? `已签 · ${today.streak} 天` : '未签到' }}</div>
+          </router-link>
+          <router-link to="/sign-in" class="today-chip" :class="{ alert: today.claimable > 0 }">
+            <div class="chip-label">待领任务</div>
+            <div class="chip-value">{{ today.claimable }} 个</div>
+          </router-link>
+          <router-link to="/messages" class="today-chip" :class="{ alert: stats.pmUnread > 0 }">
+            <div class="chip-label">未读私信</div>
+            <div class="chip-value">{{ stats.pmUnread }}</div>
+          </router-link>
+          <router-link to="/notifications" class="today-chip" :class="{ alert: stats.unread > 0 }">
+            <div class="chip-label">未读通知</div>
+            <div class="chip-value">{{ stats.unread }}</div>
+          </router-link>
+          <router-link to="/drafts" class="today-chip" :class="{ alert: stats.drafts > 0 }">
+            <div class="chip-label">草稿</div>
+            <div class="chip-value">{{ stats.drafts }} 篇</div>
+          </router-link>
+          <router-link to="/feed" class="today-chip">
+            <div class="chip-label">关注动态</div>
+            <div class="chip-value">去看看</div>
+          </router-link>
         </div>
       </div>
 
@@ -59,8 +92,19 @@ const stats = ref({
   myThreads: 0,
   pmUnread: 0,
 })
+const today = ref({
+  signedIn: false,
+  streak: 0,
+  claimable: 0,
+})
 
 const cards = computed(() => [
+  {
+    to: '/feed',
+    title: '关注动态',
+    desc: '看看关注的人最近发了什么',
+    stat: '查看时间线',
+  },
   {
     to: '/messages',
     title: '私信',
@@ -121,7 +165,7 @@ const cards = computed(() => [
     to: '/sign-in',
     title: '签到与任务',
     desc: '每日签到、任务奖励与徽章',
-    stat: '去完成',
+    stat: today.value.claimable ? `${today.value.claimable} 个可领取` : '去完成',
   },
   {
     to: '/recharge',
@@ -134,7 +178,7 @@ const cards = computed(() => [
 async function load() {
   if (!auth.isLoggedIn) return
   try {
-    const [d, h, s, f, n, t, pm] = await Promise.all([
+    const [d, h, s, f, n, t, pm, sign, tasks] = await Promise.all([
       api.get('/me/drafts'),
       api.get('/me/history', { params: { take: 100 } }),
       api.get('/me/subscriptions'),
@@ -142,6 +186,8 @@ async function load() {
       api.get('/me/notifications/summary'),
       api.get('/me/threads', { params: { page: 1, pageSize: 1 } }),
       api.get('/messages/unread-count'),
+      api.get('/me/sign-in-status').catch(() => ({ data: null })),
+      api.get('/tasks').catch(() => ({ data: [] })),
     ])
     stats.value = {
       drafts: d.data?.length || 0,
@@ -151,6 +197,12 @@ async function load() {
       unread: n.data?.totalUnread || 0,
       myThreads: t.data?.total || 0,
       pmUnread: pm.data?.count || 0,
+    }
+    const taskList = tasks.data || []
+    today.value = {
+      signedIn: !!(sign.data?.todaySignedIn),
+      streak: sign.data?.consecutiveDays || 0,
+      claimable: taskList.filter((x) => !x.claimed && x.progress >= x.target).length,
     }
   } catch { /* ignore */ }
 }
@@ -179,46 +231,95 @@ onMounted(load)
   font-size: 16px;
   font-weight: 700;
 }
-.hub-name a { color: #142033; text-decoration: none; }
-.hub-name a:hover { color: #0d9488; }
-.hub-assets { font-size: 12px; color: #7a869c; margin-top: 4px; }
-.level-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #ecfdf5;
-  color: #0f766e;
+.hub-name a {
+  color: #142033;
+  text-decoration: none;
+}
+.hub-assets {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #7a869c;
+}
+.today-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.today-link {
+  font-size: 12px;
   font-weight: 600;
+  color: #0d9488;
+  text-decoration: none;
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+.today-chip {
+  display: block;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(20, 32, 51, 0.06);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.today-chip:hover {
+  border-color: rgba(13, 148, 136, 0.35);
+  background: rgba(13, 148, 136, 0.04);
+}
+.today-chip.done {
+  background: rgba(13, 148, 136, 0.08);
+  border-color: rgba(13, 148, 136, 0.2);
+}
+.today-chip.alert {
+  background: rgba(225, 29, 72, 0.05);
+  border-color: rgba(225, 29, 72, 0.18);
+}
+.chip-label {
+  font-size: 12px;
+  color: #7a869c;
+}
+.chip-value {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #142033;
 }
 .hub-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 .hub-card {
   display: block;
+  padding: 16px;
   background: #fff;
   border: 1px solid rgba(20, 32, 51, 0.08);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 14px;
   text-decoration: none;
-  color: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s;
 }
 .hub-card:hover {
-  border-color: #0d9488;
-  box-shadow: 0 6px 18px rgba(13, 148, 136, 0.08);
+  border-color: rgba(13, 148, 136, 0.35);
+  box-shadow: 0 8px 24px rgba(20, 32, 51, 0.06);
 }
 .hub-card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  gap: 8px;
 }
-.hub-card-title { font-size: 15px; font-weight: 700; color: #142033; }
+.hub-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #142033;
+}
 .hub-badge {
-  min-width: 20px;
-  height: 20px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 6px;
   border-radius: 999px;
   background: #e11d48;
@@ -229,19 +330,18 @@ onMounted(load)
   align-items: center;
   justify-content: center;
 }
-.hub-card-desc { font-size: 12px; color: #7a869c; line-height: 1.5; }
+.hub-card-desc {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #7a869c;
+}
 .hub-card-stat {
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 13px;
   font-weight: 600;
   color: #0d9488;
 }
-@media (max-width: 900px) {
-  .hub-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 560px) {
-  .hub-grid { grid-template-columns: 1fr; }
-  .hub-profile { flex-wrap: wrap; }
-  .ms-auto { margin-left: 0 !important; }
+@media (max-width: 768px) {
+  .today-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

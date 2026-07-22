@@ -387,7 +387,13 @@ public record AdminStatsDto(
     List<AdminTodoThreadDto> TodoHidden,
     List<AdminTodoUserDto> TodoMuted,
     List<AdminTodoThreadDto> TodoLocked,
-    List<ModerationLogDto> RecentModLogs);
+    List<ModerationLogDto> RecentModLogs,
+    int YesterdaySignIns = 0,
+    int YesterdayRegistrations = 0,
+    int YesterdayThreads = 0,
+    int YesterdayReplies = 0,
+    int YesterdayActiveUsers = 0,
+    int PendingReviewThreads = 0);
 
 public record AdminForumHeatDto(
     int ForumId, string Name, int ThreadCount, int TodayThreads, int SubscriberCount);

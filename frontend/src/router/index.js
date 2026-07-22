@@ -23,6 +23,7 @@ const routes = [
   { path: '/me', name: 'me', component: () => import('../views/MeHubView.vue') },
   { path: '/me/threads', name: 'my-threads', component: () => import('../views/MyThreadsView.vue') },
   { path: '/me/favorites', name: 'my-favorites', component: () => import('../views/MyFavoritesView.vue') },
+  { path: '/feed', name: 'feed', component: () => import('../views/FeedView.vue') },
   { path: '/tag/:name', name: 'tag', component: () => import('../views/TagView.vue') },
   { path: '/user/:id', name: 'user', component: () => import('../views/UserProfileView.vue') },
   { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
@@ -33,6 +34,7 @@ const routes = [
     beforeEnter: adminGuard,
     children: [
       { path: '', name: 'admin-dashboard', component: () => import('../views/admin/DashboardView.vue') },
+      { path: 'queue', name: 'admin-queue', component: () => import('../views/admin/QueueView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('../views/admin/UsersView.vue') },
       { path: 'forums', name: 'admin-forums', component: () => import('../views/admin/ForumsView.vue') },
       { path: 'threads', name: 'admin-threads', component: () => import('../views/admin/ThreadsView.vue') },

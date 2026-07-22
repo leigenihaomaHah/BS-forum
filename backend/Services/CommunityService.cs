@@ -103,20 +103,28 @@ public class CommunityService
         return (new FollowResultDto(true, "关注成功"), null);
     }
 
-    public async Task<List<FeedItemDto>> GetFeedAsync(int userId, int take = 20)
+    public async Task<PagedResult<FeedItemDto>> GetFeedAsync(int userId, int page = 1, int pageSize = 20)
     {
-        take = Math.Clamp(take, 1, 50);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
         var followeeIds = await _db.UserFollows.Where(f => f.FollowerId == userId).Select(f => f.FolloweeId).ToListAsync();
-        if (followeeIds.Count == 0) return [];
+        if (followeeIds.Count == 0)
+            return new PagedResult<FeedItemDto>([], 0, page, pageSize);
 
         var blocked = await GetBlockedUserIdsAsync(userId);
-        return await _db.Threads
+        var query = _db.Threads
             .Include(t => t.Forum).Include(t => t.Author)
-            .Where(t => followeeIds.Contains(t.AuthorId) && !t.IsHidden && !t.PendingReview && !blocked.Contains(t.AuthorId))
+            .Where(t => followeeIds.Contains(t.AuthorId) && !t.IsHidden && !t.PendingReview && !blocked.Contains(t.AuthorId));
+
+        var total = await query.CountAsync();
+        var items = await query
             .OrderByDescending(t => t.CreatedAt)
-            .Take(take)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(t => new FeedItemDto(t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.AuthorId, t.CreatedAt, "thread"))
             .ToListAsync();
+
+        return new PagedResult<FeedItemDto>(items, total, page, pageSize);
     }
 
     public async Task AttachTagsAsync(int threadId, List<string>? tagNames)

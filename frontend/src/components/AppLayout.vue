@@ -2,28 +2,22 @@
   <div class="forum-wrap">
     <header class="site-header">
       <div class="util-bar">
-        <div>发现社区 · 分享观点 · 一起成长</div>
-        <div v-if="auth.isLoggedIn" class="user-assets">
-            <span class="avatar-frame" :class="'frame-' + (auth.user.avatarFrame || '')">
-              <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
-            </span>
-            <router-link :to="`/user/${auth.user.id}`">{{ auth.user.nickname }}</router-link>
-            <router-link to="/me" class="me-link" title="个人中心">我的</router-link>
-            <router-link to="/settings" class="settings-link" title="设置">⚙</router-link>
-          <span
-            class="level-badge"
-            :class="{ 'lv-high': auth.user.level >= 5 }"
-          >Lv.{{ auth.user.level }} {{ auth.user.levelName }}</span>
+        <div class="util-slogan">发现社区 · 分享观点 · 一起成长</div>
+        <div v-if="auth.isLoggedIn" class="util-mid">
+          <span class="level-badge" :class="{ 'lv-high': auth.user.level >= 5 }">
+            Lv.{{ auth.user.level }} {{ auth.user.levelName }}
+          </span>
           <span class="asset-chip">积分 {{ auth.user.points }}</span>
           <span class="asset-chip">金币 {{ auth.user.coins }}</span>
           <router-link to="/recharge" class="recharge-link">开通会员</router-link>
           <span v-if="nextLevelInfo" class="next-level-hint">
-            <span class="hint-text">距 Lv.{{ nextLevelInfo.level }} {{ nextLevelInfo.name }} 差 {{ nextLevelInfo.minPoints - auth.user.points }} 分</span>
+            <span class="hint-text">距 Lv.{{ nextLevelInfo.level }} 差 {{ nextLevelInfo.minPoints - auth.user.points }} 分</span>
             <div class="mini-progress">
               <div class="mini-progress-bar" :style="{ width: levelProgressPct + '%' }"></div>
             </div>
           </span>
-          <router-link v-if="isAdmin" to="/admin" class="admin-link">管理后台</router-link>
+        </div>
+        <div v-if="auth.isLoggedIn" class="user-assets">
           <router-link to="/messages" class="pm-link" title="私信">
             私信
             <span v-if="pmUnread > 0" class="notif-badge pm-badge">{{ pmUnread > 99 ? '99+' : pmUnread }}</span>
@@ -78,9 +72,25 @@
               </div>
             </div>
           </div>
-          <a href="#" @click.prevent="auth.logout()">退出</a>
+
+          <div class="user-menu-wrap">
+            <button type="button" class="user-menu-trigger" @click.stop="toggleUserMenu">
+              <span class="avatar-frame" :class="'frame-' + (auth.user.avatarFrame || '')">
+                <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
+              </span>
+              <span class="user-menu-name">{{ auth.user.nickname }}</span>
+              <span class="user-menu-caret">▾</span>
+            </button>
+            <div v-if="showUserMenu" class="user-menu-dropdown" @click.stop>
+              <router-link :to="`/user/${auth.user.id}`" @click="showUserMenu = false">我的主页</router-link>
+              <router-link to="/me" @click="showUserMenu = false">个人中心</router-link>
+              <router-link to="/settings" @click="showUserMenu = false">账号设置</router-link>
+              <router-link v-if="isAdmin" to="/admin" class="admin-link" @click="showUserMenu = false">管理后台</router-link>
+              <a href="#" @click.prevent="auth.logout(); showUserMenu = false">退出登录</a>
+            </div>
+          </div>
         </div>
-        <div v-else>
+        <div v-else class="user-assets">
           <a href="#" @click.prevent="authModal.openLogin()">登录</a>
           <a href="#" class="btn-text-accent" @click.prevent="authModal.openRegister()">注册</a>
         </div>
@@ -99,6 +109,7 @@
 
       <nav class="main-nav">
         <router-link to="/" :class="{ active: $route.name === 'home' }">首页</router-link>
+        <router-link to="/feed" :class="{ active: $route.name === 'feed' }">关注</router-link>
         <router-link to="/sign-in" :class="{ active: $route.name === 'signin' }">每日签到</router-link>
         <router-link to="/shop" :class="{ active: $route.name === 'shop' }">积分商城</router-link>
         <router-link to="/invite" :class="{ active: $route.name === 'invite' }">邀请注册</router-link>
@@ -157,6 +168,14 @@ const toast = useToastStore()
 const searchQuery = ref('')
 const navCategories = ref([])
 const isAdmin = computed(() => isAdminUser(auth.user))
+const showUserMenu = ref(false)
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+  if (showUserMenu.value) {
+    showNotif.value = false
+  }
+}
 
 function scrollToCategory(id) {
   if (route.name !== 'home') {
@@ -209,6 +228,7 @@ async function loadNotifications() {
 async function toggleNotif() {
   showNotif.value = !showNotif.value
   if (showNotif.value) {
+    showUserMenu.value = false
     notifLoading.value = true
     await loadNotifications()
     notifLoading.value = false
@@ -232,12 +252,6 @@ async function markAllRead() {
   } catch { console.warn('markAllRead failed') }
 }
 
-function closeNotif(e) {
-  if (!e.target.closest('.notif-wrapper')) {
-    showNotif.value = false
-  }
-}
-
 async function loadNavCategories() {
   try {
     const { data } = await api.get('/categories')
@@ -254,10 +268,15 @@ function startNotifPolling() {
   notifTimer = setInterval(refreshUnread, 30000)
 }
 
+function closeOverlays(e) {
+  if (!e.target.closest('.notif-wrapper')) showNotif.value = false
+  if (!e.target.closest('.user-menu-wrap')) showUserMenu.value = false
+}
+
 onMounted(() => {
   loadNavCategories()
   startNotifPolling()
-  document.addEventListener('click', closeNotif)
+  document.addEventListener('click', closeOverlays)
   window.addEventListener('forum:refresh-unread', refreshUnread)
 })
 
@@ -265,7 +284,7 @@ watch(() => auth.isLoggedIn, startNotifPolling)
 
 onUnmounted(() => {
   clearInterval(notifTimer)
-  document.removeEventListener('click', closeNotif)
+  document.removeEventListener('click', closeOverlays)
   window.removeEventListener('forum:refresh-unread', refreshUnread)
 })
 
@@ -287,6 +306,59 @@ function doSearch() {
   object-fit: cover;
   display: block;
 }
+.user-menu-wrap { position: relative; z-index: 25; }
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.user-menu-name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-menu-caret { font-size: 10px; opacity: 0.7; }
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 200px;
+  background: #fff;
+  border: 1px solid rgba(20, 32, 51, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(20, 32, 51, 0.12);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-menu-dropdown a {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #142033 !important;
+  text-decoration: none !important;
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 0 !important;
+}
+.user-menu-dropdown a:hover { background: #f8fafc; }
+.next-level-hint {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 110px;
+  max-width: 150px;
+  flex-shrink: 1;
+}
 .pm-link {
   position: relative;
   display: inline-flex;
@@ -300,29 +372,6 @@ function doSearch() {
 }
 .pm-link:hover { color: #142033 !important; }
 .pm-badge { position: absolute; top: -6px; right: -4px; }
-.me-link {
-  text-decoration: none !important;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  white-space: nowrap;
-}
-.settings-link {
-  text-decoration: none !important;
-  font-size: 16px;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.next-level-hint {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 120px;
-  max-width: 160px;
-  flex-shrink: 1;
-}
 .hint-text {
   font-size: 11px;
   color: #7a869c;
@@ -348,7 +397,7 @@ function doSearch() {
   color: #12b76a !important;
   font-weight: 700 !important;
   text-decoration: none !important;
-  margin-left: 4px;
+  white-space: nowrap;
 }
 .recharge-link:hover { text-decoration: underline !important; }
 

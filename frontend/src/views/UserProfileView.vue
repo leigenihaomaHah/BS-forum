@@ -27,18 +27,18 @@
               <span>粉丝 {{ profile.followerCount ?? 0 }} · 关注 {{ profile.followingCount ?? 0 }}</span>
               <button
                 v-if="auth.isLoggedIn && !isSelf"
-                class="btn btn-sm ms-2"
-                :class="profile.followedByMe ? 'btn-outline-secondary' : 'btn-forum'"
+                class="btn-sm ms-2"
+                :class="profile.followedByMe ? 'btn-outline-modern' : 'btn-forum'"
                 @click="toggleFollow"
               >{{ profile.followedByMe ? '已关注' : '关注' }}</button>
               <button
                 v-if="auth.isLoggedIn && !isSelf"
-                class="btn btn-sm btn-outline-secondary ms-1"
+                class="btn-outline-modern ms-1"
                 @click="toggleBlock"
               >{{ blocked ? '已屏蔽' : '屏蔽' }}</button>
               <button
                 v-if="auth.isLoggedIn && !isSelf"
-                class="btn btn-sm btn-forum ms-1"
+                class="btn-forum ms-1"
                 @click="router.push(`/messages?userId=${profile.id}`)"
               >发私信</button>
               <router-link

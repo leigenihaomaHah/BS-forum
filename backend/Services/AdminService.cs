@@ -54,6 +54,16 @@ public class AdminService
         var todayThreads = await _db.Threads.CountAsync(t => t.CreatedAt >= today && t.CreatedAt < tomorrow);
         var todayReplies = await _db.Posts.CountAsync(p => p.Floor > 1 && p.CreatedAt >= today && p.CreatedAt < tomorrow);
 
+        var yesterday = today.AddDays(-1);
+        var yesterdaySignIns = await _db.SignInRecords.CountAsync(r => r.SignInDate == yesterday);
+        var yesterdayRegistrations = await _db.Users.CountAsync(u => u.CreatedAt >= yesterday && u.CreatedAt < today);
+        var yesterdayThreads = await _db.Threads.CountAsync(t => t.CreatedAt >= yesterday && t.CreatedAt < today);
+        var yesterdayReplies = await _db.Posts.CountAsync(p => p.Floor > 1 && p.CreatedAt >= yesterday && p.CreatedAt < today);
+        var ySignIds = await _db.SignInRecords.Where(r => r.SignInDate == yesterday).Select(r => r.UserId).ToListAsync();
+        var yThreadAuthors = await _db.Threads.Where(t => t.CreatedAt >= yesterday && t.CreatedAt < today).Select(t => t.AuthorId).ToListAsync();
+        var yPostAuthors = await _db.Posts.Where(p => p.CreatedAt >= yesterday && p.CreatedAt < today).Select(p => p.AuthorId).ToListAsync();
+        var yesterdayActiveUsers = ySignIds.Concat(yThreadAuthors).Concat(yPostAuthors).Distinct().Count();
+
         var signInUserIds = await _db.SignInRecords.Where(r => r.SignInDate == today).Select(r => r.UserId).ToListAsync();
         var threadAuthorIds = await _db.Threads.Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow).Select(t => t.AuthorId).ToListAsync();
         var postAuthorIds = await _db.Posts.Where(p => p.CreatedAt >= today && p.CreatedAt < tomorrow).Select(p => p.AuthorId).ToListAsync();
@@ -61,6 +71,7 @@ public class AdminService
         var todayActive = todayActiveUsers;
 
         var pendingReports = await _db.Reports.CountAsync(r => r.Status == "pending");
+        var pendingReviewThreads = await _db.Threads.CountAsync(t => t.PendingReview && !t.IsHidden);
         var hiddenThreads = await _db.Threads.CountAsync(t => t.IsHidden);
         var mutedUsers = await _db.Users.CountAsync(u => u.IsMuted && (u.MutedUntil == null || u.MutedUntil > now));
         var lockedThreads = await _db.Threads.CountAsync(t => t.RepliesLocked);
@@ -118,10 +129,14 @@ public class AdminService
             var signCount = await _db.SignInRecords.CountAsync(r => r.SignInDate == d);
             var regCount = await _db.Users.CountAsync(u => u.CreatedAt >= d && u.CreatedAt < d.AddDays(1));
             var newThreadCount = await _db.Threads.CountAsync(t => t.CreatedAt >= d && t.CreatedAt < d.AddDays(1));
+            var daySignIds = await _db.SignInRecords.Where(r => r.SignInDate == d).Select(r => r.UserId).ToListAsync();
+            var dayThreadAuthors = await _db.Threads.Where(t => t.CreatedAt >= d && t.CreatedAt < d.AddDays(1)).Select(t => t.AuthorId).ToListAsync();
+            var dayPostAuthors = await _db.Posts.Where(p => p.CreatedAt >= d && p.CreatedAt < d.AddDays(1)).Select(p => p.AuthorId).ToListAsync();
+            var dayActive = daySignIds.Concat(dayThreadAuthors).Concat(dayPostAuthors).Distinct().Count();
             signInSum7 += signCount;
             weeklyActivity.Add(new AdminDayCountDto(dateStr, dayLabel, signCount));
             dailyRegistrations.Add(new AdminDayCountDto(dateStr, dayLabel, regCount));
-            dailyActive.Add(new AdminDayCountDto(dateStr, dayLabel, signCount));
+            dailyActive.Add(new AdminDayCountDto(dateStr, dayLabel, dayActive));
             dailyNewThreads.Add(new AdminDayCountDto(dateStr, dayLabel, newThreadCount));
         }
 
@@ -188,7 +203,9 @@ public class AdminService
             todayCoinDelta, todayLotterySpins, todayLotteryOutCoins, todayLotteryCostCoins,
             todayShopOrders, vipUsers, lotteryTicketStock, signInAvg7d,
             recentUsers, hotThreads, weeklyActivity, dailyRegistrations, dailyActive, dailyNewThreads,
-            forumHeat, todoReports, todoHidden, todoMuted, todoLocked, recentModLogs);
+            forumHeat, todoReports, todoHidden, todoMuted, todoLocked, recentModLogs,
+            yesterdaySignIns, yesterdayRegistrations, yesterdayThreads, yesterdayReplies,
+            yesterdayActiveUsers, pendingReviewThreads);
     }
 
     public async Task<PagedResult<AdminUserItemDto>> GetUsersAsync(int page, int pageSize, string? search, bool? muted = null)

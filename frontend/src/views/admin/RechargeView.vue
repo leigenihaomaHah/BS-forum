@@ -40,6 +40,51 @@
 
     <div class="admin-panel mb-3">
       <div class="admin-panel-hd">
+        <span>卡密库存</span>
+        <div>
+          <button class="admin-btn admin-btn-outline me-1" :class="{ active: cardUsedFilter === '' }" @click="cardUsedFilter=''; loadCards(1)">全部</button>
+          <button class="admin-btn admin-btn-outline me-1" :class="{ active: cardUsedFilter === '0' }" @click="cardUsedFilter='0'; loadCards(1)">未使用</button>
+          <button class="admin-btn admin-btn-outline" :class="{ active: cardUsedFilter === '1' }" @click="cardUsedFilter='1'; loadCards(1)">已使用</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>卡密</th>
+              <th>套餐</th>
+              <th>状态</th>
+              <th>使用者</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in cards" :key="c.id">
+              <td>{{ c.id }}</td>
+              <td>
+                <code class="card-code" @click="copyOne(c.code)" title="点击复制">{{ shortCode(c.code) }}</code>
+              </td>
+              <td>{{ c.packageName }}</td>
+              <td>
+                <span :class="c.used ? 'text-muted' : 'text-success'">{{ c.used ? '已使用' : '未使用' }}</span>
+              </td>
+              <td>{{ c.usedByNickname || '-' }}</td>
+              <td style="font-size:12px">{{ formatTime(c.createdAt) }}</td>
+              <td>
+                <button class="admin-btn admin-btn-outline" @click="copyOne(c.code)">复制</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="!cards.length" class="p-3 text-muted">暂无卡密</div>
+      <PaginationComp v-model="cardPage" :total-pages="cardTotalPages" />
+    </div>
+
+    <div class="admin-panel mb-3">
+      <div class="admin-panel-hd">
         <span>申请列表</span>
         <div>
           <button class="admin-btn admin-btn-outline me-1" :class="{ active: statusFilter === 'pending' }" @click="statusFilter='pending'; loadOrders()">待处理</button>
@@ -122,9 +167,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
 
@@ -137,6 +183,28 @@ const genPackageId = ref(0)
 const genCount = ref(10)
 const generating = ref(false)
 const generatedCodes = ref([])
+
+const cards = ref([])
+const cardPage = ref(1)
+const cardTotal = ref(0)
+const cardPageSize = 20
+const cardUsedFilter = ref('0')
+const cardTotalPages = computed(() => Math.max(1, Math.ceil(cardTotal.value / cardPageSize)))
+
+async function loadCards(p) {
+  if (p) cardPage.value = p
+  try {
+    const used = cardUsedFilter.value === '' ? undefined : cardUsedFilter.value === '1'
+    const { data } = await api.get('/admin/recharge/cards', {
+      params: { page: cardPage.value, pageSize: cardPageSize, used },
+    })
+    cards.value = data.items || []
+    cardTotal.value = data.total || 0
+  } catch {
+    cards.value = []
+    cardTotal.value = 0
+  }
+}
 
 function formatTime(iso) {
   if (!iso) return '-'
@@ -183,6 +251,7 @@ async function generateCards() {
     })
     generatedCodes.value = (data || []).map(c => c.code || c)
     toast.success(`已生成 ${generatedCodes.value.length} 张卡密`)
+    await loadCards(1)
   } catch (e) { toast.error(e.message) }
   finally { generating.value = false }
 }
@@ -214,8 +283,9 @@ async function cancelOrder(id) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadPackages(), loadOrders()])
+  await Promise.all([loadPackages(), loadOrders(), loadCards(1)])
 })
+watch(cardPage, () => loadCards())
 </script>
 
 <style scoped>

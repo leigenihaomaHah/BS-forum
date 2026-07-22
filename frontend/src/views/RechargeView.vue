@@ -27,6 +27,26 @@
     </div>
 
     <template v-else>
+      <div class="panel mb-3">
+        <div class="panel-header"><span class="accent"></span>卡密兑换</div>
+        <div class="p-3 redeem-box">
+          <p class="text-muted mb-2" style="font-size:13px">已有会员卡密？在此直接兑换开通。</p>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <input
+              v-model="redeemCode"
+              class="form-control"
+              style="max-width:320px"
+              maxlength="64"
+              placeholder="输入卡密"
+              @keyup.enter="redeemCard"
+            />
+            <button type="button" class="btn btn-forum" :disabled="redeeming || !redeemCode.trim()" @click="redeemCard">
+              {{ redeeming ? '兑换中...' : '立即兑换' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="pkg-grid mb-4">
         <div
           v-for="p in packages"
@@ -70,14 +90,14 @@
             请转账至站长公布的收款账户，备注填写：<code>VIP{{ lastOrder.id }}</code>。
             到账后站长确认，系统会生成卡密并自动兑换开通会员。
           </p>
-          <button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelOrder(lastOrder.id)">取消申请</button>
+          <button type="button" class="btn-outline-modern" @click="cancelOrder(lastOrder.id)">取消申请</button>
         </div>
       </div>
 
       <div class="panel mb-3">
         <div class="panel-header">
           <span><span class="accent"></span>我的申请</span>
-          <button type="button" class="btn btn-sm btn-outline-secondary" @click="loadOrders">刷新</button>
+          <button type="button" class="btn-outline-modern" @click="loadOrders">刷新</button>
         </div>
         <div v-if="!orders.length" class="p-3 text-muted">暂无申请</div>
         <div v-else class="order-list">
@@ -94,7 +114,7 @@
             <div v-if="o.cardCode" class="order-card">
               <div class="order-card-label">卡密（已自动兑换）</div>
               <code class="order-card-code">{{ o.cardCode }}</code>
-              <button type="button" class="btn btn-sm btn-outline-secondary" @click="copyCode(o.cardCode)">复制</button>
+              <button type="button" class="btn-outline-modern" @click="copyCode(o.cardCode)">复制</button>
             </div>
           </div>
         </div>
@@ -119,6 +139,8 @@ const orders = ref([])
 const selectedId = ref(null)
 const lastOrder = ref(null)
 const ordering = ref(false)
+const redeemCode = ref('')
+const redeeming = ref(false)
 
 const lastPaidWithCard = computed(() =>
   orders.value.find((o) => o.status === 'paid' && o.cardCode) || null
@@ -188,6 +210,23 @@ async function cancelOrder(id) {
     await api.post(`/recharge/orders/${id}/cancel`)
     await loadOrders()
   } catch (e) { toast.error(e.message) }
+}
+
+async function redeemCard() {
+  const code = redeemCode.value.trim()
+  if (!code || redeeming.value) return
+  redeeming.value = true
+  try {
+    const { data } = await api.post('/recharge/redeem', { code })
+    toast.success(data?.message || '兑换成功，会员已开通')
+    redeemCode.value = ''
+    await auth.fetchMe()
+    await loadOrders()
+  } catch (e) {
+    toast.error(e.message)
+  } finally {
+    redeeming.value = false
+  }
 }
 
 onMounted(async () => {

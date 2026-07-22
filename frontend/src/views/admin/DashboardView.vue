@@ -13,24 +13,40 @@
       </div>
     </div>
 
+    <div v-if="alertItems.length" class="alert-strip">
+      <strong>需关注：</strong>
+      <router-link v-for="a in alertItems" :key="a.to" :to="a.to">{{ a.text }}</router-link>
+    </div>
+
     <!-- KPI -->
     <div class="kpi-row">
       <router-link to="/admin/users" class="kpi-card">
         <div class="kpi-label">用户</div>
         <div class="kpi-num">{{ s.totalUsers ?? '—' }}</div>
-        <div class="kpi-meta">今日注册 {{ s.todayRegistrations ?? 0 }} · 禁言 {{ s.mutedUsers ?? 0 }}</div>
+        <div class="kpi-meta">
+          今日注册 {{ s.todayRegistrations ?? 0 }}
+          <span :class="deltaClass(s.todayRegistrations, s.yesterdayRegistrations)">{{ deltaText(s.todayRegistrations, s.yesterdayRegistrations) }}</span>
+          · 禁言 {{ s.mutedUsers ?? 0 }}
+        </div>
       </router-link>
       <router-link to="/admin/threads" class="kpi-card">
         <div class="kpi-label">内容</div>
         <div class="kpi-num">{{ s.totalThreads ?? '—' }}</div>
-        <div class="kpi-meta">今日新帖 {{ s.todayThreads ?? 0 }} · 回复 {{ s.todayReplies ?? 0 }}</div>
+        <div class="kpi-meta">
+          今日新帖 {{ s.todayThreads ?? 0 }}
+          <span :class="deltaClass(s.todayThreads, s.yesterdayThreads)">{{ deltaText(s.todayThreads, s.yesterdayThreads) }}</span>
+          · 回复 {{ s.todayReplies ?? 0 }}
+          <span :class="deltaClass(s.todayReplies, s.yesterdayReplies)">{{ deltaText(s.todayReplies, s.yesterdayReplies) }}</span>
+        </div>
       </router-link>
       <router-link to="/admin/signin" class="kpi-card">
         <div class="kpi-label">今日活跃</div>
         <div class="kpi-num">{{ s.todayActiveUsers ?? s.todayActive ?? '—' }}</div>
         <div class="kpi-meta">
-          签到 {{ s.todaySignIns ?? 0 }}
-          <span :class="signInDeltaClass">{{ signInDeltaText }}</span>
+          较昨日
+          <span :class="deltaClass(s.todayActiveUsers, s.yesterdayActiveUsers)">{{ deltaText(s.todayActiveUsers, s.yesterdayActiveUsers) }}</span>
+          · 签到 {{ s.todaySignIns ?? 0 }}
+          <span :class="deltaClass(s.todaySignIns, s.yesterdaySignIns)">{{ deltaText(s.todaySignIns, s.yesterdaySignIns) }}</span>
         </div>
       </router-link>
       <router-link to="/shop" class="kpi-card">
@@ -42,8 +58,8 @@
       </router-link>
       <router-link to="/admin/reports" class="kpi-card kpi-risk">
         <div class="kpi-label">风险待办</div>
-        <div class="kpi-num">{{ s.pendingReports ?? '—' }}</div>
-        <div class="kpi-meta">隐藏帖 {{ s.hiddenThreads ?? 0 }} · 禁言 {{ s.mutedUsers ?? 0 }}</div>
+        <div class="kpi-num">{{ (s.pendingReports || 0) + (s.pendingReviewThreads || 0) }}</div>
+        <div class="kpi-meta">举报 {{ s.pendingReports ?? 0 }} · 待审帖 {{ s.pendingReviewThreads ?? 0 }}</div>
       </router-link>
     </div>
 
@@ -56,6 +72,12 @@
         </div>
         <div v-if="todoTotal === 0" class="todo-empty">当前无积压，社区状态良好</div>
         <div v-else class="todo-sections">
+          <div v-if="s.pendingReviewThreads" class="todo-block">
+            <div class="todo-block-hd">
+              <router-link to="/admin/threads?status=pending">待审帖 · {{ s.pendingReviewThreads }}</router-link>
+            </div>
+            <div class="p-2 text-muted" style="font-size:12px">请尽快处理，避免用户等待过久</div>
+          </div>
           <div v-if="s.pendingReports" class="todo-block">
             <div class="todo-block-hd">
               <router-link to="/admin/reports">待处理举报 · {{ s.pendingReports }}</router-link>
@@ -230,23 +252,42 @@ let chartInstance = null
 
 const hasTrend = computed(() => (s.value.dailyRegistrations || []).length > 0)
 const todoTotal = computed(() =>
-  (s.value.pendingReports || 0) + (s.value.hiddenThreads || 0) + (s.value.mutedUsers || 0) + (s.value.lockedThreads || 0)
+  (s.value.pendingReports || 0) +
+  (s.value.pendingReviewThreads || 0) +
+  (s.value.hiddenThreads || 0) +
+  (s.value.mutedUsers || 0) +
+  (s.value.lockedThreads || 0)
 )
 
-const signInDeltaText = computed(() => {
-  const avg = s.value.signInAvg7d
-  const today = s.value.todaySignIns
-  if (avg == null || today == null || avg === 0) return ''
-  const pct = Math.round(((today - avg) / avg) * 100)
-  if (pct === 0) return '· 持平均值'
-  return pct > 0 ? `· 较均值 ↑${pct}%` : `· 较均值 ↓${Math.abs(pct)}%`
+const alertItems = computed(() => {
+  const items = []
+  const pending = (s.value.pendingReports || 0) + (s.value.pendingReviewThreads || 0)
+  if (pending > 0) {
+    items.push({ to: '/admin/queue', text: `${pending} 项待处理（进审核队列）` })
+  }
+  if (s.value.pendingReports > 0) {
+    items.push({ to: '/admin/reports', text: `${s.value.pendingReports} 条待处理举报` })
+  }
+  if (s.value.pendingReviewThreads > 0) {
+    items.push({ to: '/admin/threads?status=pending', text: `${s.value.pendingReviewThreads} 帖待审核` })
+  }
+  if (s.value.mutedUsers > 10) {
+    items.push({ to: '/admin/users?muted=1', text: `${s.value.mutedUsers} 人禁言中` })
+  }
+  return items
 })
-const signInDeltaClass = computed(() => {
-  const avg = s.value.signInAvg7d || 0
-  const today = s.value.todaySignIns || 0
-  if (!avg) return ''
-  return today >= avg ? 'up' : 'down'
-})
+
+function deltaText(today, yesterday) {
+  if (today == null || yesterday == null) return ''
+  const d = today - yesterday
+  if (d === 0) return '· 持平'
+  return d > 0 ? `· 较昨日 ↑${d}` : `· 较昨日 ↓${Math.abs(d)}`
+}
+
+function deltaClass(today, yesterday) {
+  if (today == null || yesterday == null) return ''
+  return today >= yesterday ? 'up' : 'down'
+}
 
 function formatDelta(n) {
   if (n == null) return '—'
@@ -386,6 +427,25 @@ onUnmounted(() => {
   gap: 16px;
   margin-bottom: 18px;
 }
+.alert-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(225, 29, 72, 0.08);
+  border: 1px solid rgba(225, 29, 72, 0.18);
+  color: #9f1239;
+  font-size: 13px;
+}
+.alert-strip a {
+  color: #be123c;
+  font-weight: 700;
+  text-decoration: none;
+}
+.alert-strip a:hover { text-decoration: underline; }
 .board-sub {
   margin: 4px 0 0;
   font-size: 13px;

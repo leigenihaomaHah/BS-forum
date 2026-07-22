@@ -71,11 +71,14 @@ public class CommunityController : ControllerBase
 
     [HttpGet("feed")]
     [Authorize]
-    public async Task<ActionResult<List<FeedItemDto>>> Feed([FromQuery] int take = 20)
+    public async Task<ActionResult<PagedResult<FeedItemDto>>> Feed(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] int? take = null)
     {
         var uid = JwtHelper.GetUserId(User);
         if (uid == null) return Unauthorized();
-        return Ok(await _community.GetFeedAsync(uid.Value, take));
+        if (take.HasValue && !Request.Query.ContainsKey("page"))
+            return Ok(await _community.GetFeedAsync(uid.Value, 1, take.Value));
+        return Ok(await _community.GetFeedAsync(uid.Value, page, pageSize));
     }
 
     [HttpGet("shop")]

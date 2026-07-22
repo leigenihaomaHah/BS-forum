@@ -48,6 +48,7 @@ const auth = useAuthStore()
 
 const navItems = [
   { to: '/admin', icon: '📊', label: '运营看板' },
+  { to: '/admin/queue', icon: '⚡', label: '审核队列' },
   { to: '/admin/users', icon: '👥', label: '用户管理' },
   { to: '/admin/forums', icon: '📋', label: '版块管理' },
   { to: '/admin/threads', icon: '📝', label: '帖子管理' },
