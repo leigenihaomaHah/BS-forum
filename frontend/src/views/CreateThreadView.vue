@@ -110,6 +110,7 @@ import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useToastStore } from '../stores/toast'
 import { canCreateThread, getNextLevel } from '../config/levels.js'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { markdownHint } from '../utils/markdown.js'
@@ -120,6 +121,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const toast = useToastStore()
 const mdHint = markdownHint()
 const title = ref('')
 const content = ref('')
@@ -243,6 +245,7 @@ async function saveDraftNow() {
   if (!auth.isLoggedIn) return
   if (!title.value.trim() && !content.value.trim() && !images.value.length) {
     draftHint.value = '写点内容再保存'
+    toast.info('写点内容再保存')
     return
   }
   savingDraft.value = true
@@ -250,8 +253,11 @@ async function saveDraftNow() {
     const { data } = await api.post('/me/drafts', draftPayload())
     draftId.value = data.id
     draftHint.value = '草稿已保存'
+    toast.success('草稿已保存')
   } catch (e) {
-    draftHint.value = e.response?.data?.message || '保存失败'
+    const msg = e.response?.data?.message || '保存失败'
+    draftHint.value = msg
+    toast.error(msg)
   } finally {
     savingDraft.value = false
   }

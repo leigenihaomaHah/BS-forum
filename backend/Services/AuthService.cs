@@ -319,22 +319,31 @@ public class AuthService
             badges, followers, following, followed);
     }
 
-    public async Task<List<ActivityItemDto>> GetActivityAsync(int userId)
+    public async Task<PagedResult<ActivityItemDto>> GetActivityAsync(int userId, int page = 1, int pageSize = 10)
     {
-        var posts = await _db.Posts
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var query = _db.Posts
             .Include(p => p.Thread).ThenInclude(t => t.Forum)
-            .Where(p => p.AuthorId == userId)
+            .Where(p => p.AuthorId == userId);
+
+        var total = await query.CountAsync();
+        var posts = await query
             .OrderByDescending(p => p.CreatedAt)
-            .Take(50)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
-        return posts.Select(p => new ActivityItemDto(
+        var items = posts.Select(p => new ActivityItemDto(
             p.Floor == 1 ? "thread" : "reply",
             p.ThreadId,
             p.Thread.Title,
             p.Thread.Forum.Name,
             p.Content.Length > 200 ? p.Content[..200] : p.Content,
             p.CreatedAt)).ToList();
+
+        return new PagedResult<ActivityItemDto>(items, total, page, pageSize);
     }
 
     private static (int Points, int Coins) CalcSignInRewards(int consecutiveDays)

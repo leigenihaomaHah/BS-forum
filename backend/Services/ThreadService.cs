@@ -650,13 +650,29 @@ public class ThreadService
 
     public async Task<List<PurchaseHistoryDto>> GetPurchasesAsync(int userId)
     {
-        return await _db.ThreadPurchases
+        var result = await GetPurchasesAsync(userId, 1, 1000);
+        return result.Items;
+    }
+
+    public async Task<PagedResult<PurchaseHistoryDto>> GetPurchasesAsync(int userId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var query = _db.ThreadPurchases
             .Include(p => p.Thread).ThenInclude(t => t.Forum)
-            .Where(p => p.UserId == userId)
+            .Where(p => p.UserId == userId);
+
+        var total = await query.CountAsync();
+        var items = await query
             .OrderByDescending(p => p.PurchasedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(p => new PurchaseHistoryDto(
                 p.ThreadId, p.Thread.Title, p.Thread.Forum.Name, p.CoinPrice, p.PurchasedAt))
             .ToListAsync();
+
+        return new PagedResult<PurchaseHistoryDto>(items, total, page, pageSize);
     }
 
     public async Task<(FavoriteResultDto? Result, string? Error)> ToggleFavoriteAsync(int userId, int threadId)
@@ -684,6 +700,15 @@ public class ThreadService
 
     public async Task<List<FavoriteItemDto>> GetFavoritesAsync(int userId, int? folderId = null)
     {
+        var result = await GetFavoritesAsync(userId, folderId, 1, 1000);
+        return result.Items;
+    }
+
+    public async Task<PagedResult<FavoriteItemDto>> GetFavoritesAsync(int userId, int? folderId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
         var query = _db.ThreadFavorites
             .Include(f => f.Thread).ThenInclude(t => t.Forum)
             .Where(f => f.UserId == userId && !f.Thread.IsHidden);
@@ -696,11 +721,16 @@ public class ThreadService
                 query = query.Where(f => f.FolderId == folderId.Value);
         }
 
-        return await query
+        var total = await query.CountAsync();
+        var items = await query
             .OrderByDescending(f => f.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(f => new FavoriteItemDto(
                 f.Id, f.Thread.Id, f.Thread.Title, f.Thread.Forum.Name, f.Thread.ReplyCount, f.CreatedAt, f.FolderId))
             .ToListAsync();
+
+        return new PagedResult<FavoriteItemDto>(items, total, page, pageSize);
     }
 
     public async Task<List<FavoriteFolderDto>> GetFavoriteFoldersAsync(int userId)

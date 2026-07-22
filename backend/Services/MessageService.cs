@@ -56,6 +56,12 @@ public class MessageService
         var users = await _db.Users.Where(u => peerIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id);
 
+        var unreadByPeer = await _db.PrivateMessages
+            .Where(m => m.ReceiverId == userId && !m.IsRead)
+            .GroupBy(m => m.SenderId)
+            .Select(g => new { PeerId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PeerId, x => x.Count);
+
         var result = new List<ConversationDto>();
         var seen = new HashSet<int>();
         foreach (var m in msgs)
@@ -63,7 +69,7 @@ public class MessageService
             var peerId = m.SenderId == userId ? m.ReceiverId : m.SenderId;
             if (!seen.Add(peerId)) continue;
             users.TryGetValue(peerId, out var peer);
-            var unread = msgs.Count(x => x.SenderId == peerId && x.ReceiverId == userId && !x.IsRead);
+            unreadByPeer.TryGetValue(peerId, out var unread);
             result.Add(new ConversationDto(
                 peerId,
                 peer?.Nickname ?? "用户",
@@ -99,6 +105,46 @@ public class MessageService
 
     public async Task<int> UnreadCountAsync(int userId) =>
         await _db.PrivateMessages.CountAsync(m => m.ReceiverId == userId && !m.IsRead);
+
+    public async Task<int> MarkAllReadAsync(int userId)
+    {
+        var unread = await _db.PrivateMessages
+            .Where(m => m.ReceiverId == userId && !m.IsRead)
+            .ToListAsync();
+        foreach (var m in unread) m.IsRead = true;
+        if (unread.Count > 0) await _db.SaveChangesAsync();
+        return unread.Count;
+    }
+
+    public async Task<(int Count, string? Error)> MarkConversationReadAsync(int userId, int peerId)
+    {
+        if (await _db.Users.FindAsync(peerId) == null)
+            return (0, "用户不存在");
+
+        var unread = await _db.PrivateMessages
+            .Where(m => m.SenderId == peerId && m.ReceiverId == userId && !m.IsRead)
+            .ToListAsync();
+        foreach (var m in unread) m.IsRead = true;
+        if (unread.Count > 0) await _db.SaveChangesAsync();
+        return (unread.Count, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> MarkConversationUnreadAsync(int userId, int peerId)
+    {
+        if (await _db.Users.FindAsync(peerId) == null)
+            return (false, "用户不存在");
+
+        var lastIncoming = await _db.PrivateMessages
+            .Where(m => m.SenderId == peerId && m.ReceiverId == userId)
+            .OrderByDescending(m => m.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (lastIncoming == null)
+            return (false, "没有可标记的消息");
+
+        lastIncoming.IsRead = false;
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
 
     private static PrivateMessageDto ToDto(PrivateMessage m, string senderNick, string receiverNick) =>
         new(m.Id, m.SenderId, senderNick, m.ReceiverId, receiverNick, m.Content, m.IsRead, m.CreatedAt);

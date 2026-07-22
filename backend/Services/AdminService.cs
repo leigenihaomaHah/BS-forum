@@ -17,14 +17,25 @@ public class AdminService
     private readonly RewardService _rewards;
     private readonly CommunityService _community;
     private readonly NotificationService _notifications;
+    private readonly JwtHelper _jwt;
+    private readonly AuthService _auth;
 
-    public AdminService(AppDbContext db, LevelService levels, RewardService rewards, CommunityService community, NotificationService notifications)
+    public AdminService(
+        AppDbContext db,
+        LevelService levels,
+        RewardService rewards,
+        CommunityService community,
+        NotificationService notifications,
+        JwtHelper jwt,
+        AuthService auth)
     {
         _db = db;
         _levels = levels;
         _rewards = rewards;
         _community = community;
         _notifications = notifications;
+        _jwt = jwt;
+        _auth = auth;
     }
 
     public async Task<AdminStatsDto> GetStatsAsync()
@@ -292,6 +303,20 @@ public class AdminService
         _db.Users.Remove(user);
         await _db.SaveChangesAsync();
         return (true, null);
+    }
+
+    public async Task<(AuthResponse? Result, string? Error)> LoginAsUserAsync(int adminId, int targetUserId)
+    {
+        if (adminId == targetUserId) return (null, "已经是该账号，无需切换");
+        var target = await _db.Users.FindAsync(targetUserId);
+        if (target == null) return (null, "用户不存在");
+        if (target.IsAdmin) return (null, "不能登录其他管理员账号");
+
+        await LogAsync(adminId, "user", targetUserId, "login-as", null);
+        await _db.SaveChangesAsync();
+
+        var token = _jwt.CreateToken(target);
+        return (new AuthResponse(token, await _auth.ToUserDtoAsync(target)), null);
     }
 
     public async Task<(object? Result, string? Error)> UpdateRoleAsync(int id, int adminId, string role)

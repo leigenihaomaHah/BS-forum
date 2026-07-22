@@ -8,7 +8,7 @@
               <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
             </span>
             <router-link :to="`/user/${auth.user.id}`">{{ auth.user.nickname }}</router-link>
-            <router-link to="/me" class="settings-link" title="个人中心">我的</router-link>
+            <router-link to="/me" class="me-link" title="个人中心">我的</router-link>
             <router-link to="/settings" class="settings-link" title="设置">⚙</router-link>
           <span
             class="level-badge"
@@ -258,6 +258,7 @@ onMounted(() => {
   loadNavCategories()
   startNotifPolling()
   document.addEventListener('click', closeNotif)
+  window.addEventListener('forum:refresh-unread', refreshUnread)
 })
 
 watch(() => auth.isLoggedIn, startNotifPolling)
@@ -265,6 +266,7 @@ watch(() => auth.isLoggedIn, startNotifPolling)
 onUnmounted(() => {
   clearInterval(notifTimer)
   document.removeEventListener('click', closeNotif)
+  window.removeEventListener('forum:refresh-unread', refreshUnread)
 })
 
 const nextLevelInfo = computed(() => auth.user ? getNextLevel(auth.user.points) : null)
@@ -298,18 +300,28 @@ function doSearch() {
 }
 .pm-link:hover { color: #142033 !important; }
 .pm-badge { position: absolute; top: -6px; right: -4px; }
+.me-link {
+  text-decoration: none !important;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
 .settings-link {
   text-decoration: none !important;
-  font-size: 20px;
+  font-size: 16px;
   opacity: 0.6;
   transition: opacity 0.2s;
   line-height: 1;
+  flex-shrink: 0;
 }
 .next-level-hint {
   display: inline-flex;
   flex-direction: column;
   gap: 3px;
-  min-width: 140px;
+  min-width: 120px;
+  max-width: 160px;
+  flex-shrink: 1;
 }
 .hint-text {
   font-size: 11px;

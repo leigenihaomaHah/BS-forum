@@ -89,7 +89,7 @@
                   <div class="text-muted" style="font-size:12px">{{ t.description }} · {{ t.progress }}/{{ t.target }}</div>
                 </div>
                 <button
-                  class="btn btn-sm btn-forum"
+                  class="btn btn-sm btn-forum task-claim-btn"
                   :disabled="t.claimed || t.progress < t.target || claiming === t.code"
                   @click="claimTask(t)"
                 >{{ t.claimed ? '已领' : `领 +${t.rewardPoints}分` }}</button>
@@ -332,6 +332,11 @@ onMounted(() => {
   border-bottom: 1px solid #f1f5f9;
 }
 .task-row:last-child { border-bottom: none; }
+.task-claim-btn {
+  min-width: 76px;
+  flex-shrink: 0;
+  text-align: center;
+}
 
 .streak-display {
   display: flex;

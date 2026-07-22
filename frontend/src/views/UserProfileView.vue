@@ -44,7 +44,7 @@
               <router-link
                 v-if="isSelf"
                 to="/settings"
-                class="btn btn-sm btn-outline-secondary ms-2"
+                class="btn-outline-modern ms-2"
               >编辑资料</router-link>
             </div>
             <div v-if="badges.length" class="badge-row mb-2">
@@ -159,6 +159,7 @@
                 </div>
                 <div class="purchase-cost">-{{ pr.coinPrice }} 金币</div>
               </div>
+              <PaginationComp v-model="purchasesPage" :total-pages="purchasesTotalPages" />
             </div>
           </div>
 
@@ -172,6 +173,7 @@
                   <div class="purchase-meta">{{ f.forumName }} · {{ formatTime(f.createdAt) }}</div>
                 </div>
               </div>
+              <PaginationComp v-model="favPage" :total-pages="favTotalPages" />
             </div>
           </div>
 
@@ -191,6 +193,7 @@
                   <div class="activity-snippet">{{ a.content }}</div>
                 </div>
               </div>
+              <PaginationComp v-model="actPage" :total-pages="actTotalPages" />
             </div>
           </div>
         </div>
@@ -204,6 +207,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
+import PaginationComp from '../components/PaginationComp.vue'
 import { useAuthStore } from '../stores/auth'
 import { useToastStore } from '../stores/toast'
 import { getLevels, getLevel, getNextLevel, getLevelProgress } from '../config/levels.js'
@@ -219,12 +223,25 @@ const badges = ref([])
 const loading = ref(true)
 const allLevels = computed(() => getLevels())
 const activeTab = ref('activity')
+const pageSize = 10
+
 const purchases = ref([])
 const purchasesLoading = ref(false)
+const purchasesPage = ref(1)
+const purchasesTotal = ref(0)
+const purchasesTotalPages = computed(() => Math.max(1, Math.ceil(purchasesTotal.value / pageSize)))
+
 const favorites = ref([])
 const favLoading = ref(false)
+const favPage = ref(1)
+const favTotal = ref(0)
+const favTotalPages = computed(() => Math.max(1, Math.ceil(favTotal.value / pageSize)))
+
 const activities = ref([])
 const actLoading = ref(false)
+const actPage = ref(1)
+const actTotal = ref(0)
+const actTotalPages = computed(() => Math.max(1, Math.ceil(actTotal.value / pageSize)))
 
 const isSelf = computed(() => auth.user?.id === Number(route.params.id))
 const showPrivateTabs = computed(() => isSelf.value)
@@ -233,50 +250,71 @@ const currentLevel = computed(() => profile.value ? getLevel(profile.value.point
 const nextLevel = computed(() => profile.value ? getNextLevel(profile.value.points) : null)
 const progressPct = computed(() => profile.value ? getLevelProgress(profile.value.points) : 0)
 
-async function loadPurchases() {
+async function loadPurchases(p) {
+  if (p) purchasesPage.value = p
   purchasesLoading.value = true
   try {
-    const { data } = await api.get(`/users/${route.params.id}/purchases`)
-    purchases.value = data
+    const { data } = await api.get(`/users/${route.params.id}/purchases`, {
+      params: { page: purchasesPage.value, pageSize },
+    })
+    purchases.value = data.items || []
+    purchasesTotal.value = data.total || 0
   } catch {
     purchases.value = []
+    purchasesTotal.value = 0
   } finally {
     purchasesLoading.value = false
   }
 }
 
-async function loadFavorites() {
+async function loadFavorites(p) {
+  if (p) favPage.value = p
   favLoading.value = true
   try {
-    const { data } = await api.get(`/users/${route.params.id}/favorites`)
-    favorites.value = data
+    const { data } = await api.get(`/users/${route.params.id}/favorites`, {
+      params: { page: favPage.value, pageSize },
+    })
+    favorites.value = data.items || []
+    favTotal.value = data.total || 0
   } catch {
     favorites.value = []
+    favTotal.value = 0
   } finally {
     favLoading.value = false
   }
 }
 
-async function loadActivity() {
+async function loadActivity(p) {
+  if (p) actPage.value = p
   actLoading.value = true
   try {
-    const { data } = await api.get(`/users/${route.params.id}/activity`)
-    activities.value = data
+    const { data } = await api.get(`/users/${route.params.id}/activity`, {
+      params: { page: actPage.value, pageSize },
+    })
+    activities.value = data.items || []
+    actTotal.value = data.total || 0
   } catch {
     activities.value = []
+    actTotal.value = 0
   } finally {
     actLoading.value = false
   }
 }
 
-async function loadTab(tab) {
+async function loadTab(tab, resetPage = false) {
   if (tab === 'purchases') {
     if (!showPrivateTabs.value) return
-    await loadPurchases()
+    if (resetPage && purchasesPage.value !== 1) purchasesPage.value = 1
+    else await loadPurchases()
   } else if (tab === 'favorites') {
     if (!showPrivateTabs.value) return
-    await loadFavorites()
-  } else await loadActivity()
+    if (resetPage && favPage.value !== 1) favPage.value = 1
+    else await loadFavorites()
+  } else if (resetPage && actPage.value !== 1) {
+    actPage.value = 1
+  } else {
+    await loadActivity()
+  }
 }
 
 async function load() {
@@ -296,7 +334,7 @@ async function load() {
   if (!showPrivateTabs.value && (activeTab.value === 'purchases' || activeTab.value === 'favorites')) {
     activeTab.value = 'activity'
   }
-  await loadTab(activeTab.value)
+  await loadTab(activeTab.value, true)
 }
 
 async function toggleFollow() {
@@ -325,7 +363,10 @@ async function toggleBlock() {
   }
 }
 
-watch(activeTab, (tab) => loadTab(tab))
+watch(activeTab, (tab) => loadTab(tab, true))
+watch(purchasesPage, () => { if (activeTab.value === 'purchases') loadPurchases() })
+watch(favPage, () => { if (activeTab.value === 'favorites') loadFavorites() })
+watch(actPage, () => { if (activeTab.value === 'activity') loadActivity() })
 onMounted(load)
 watch(() => route.params.id, load)
 </script>

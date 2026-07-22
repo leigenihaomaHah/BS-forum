@@ -80,10 +80,17 @@ export const useAuthStore = defineStore('auth', () => {
     persist()
   }
 
+  function applySession(t, u) {
+    token.value = t
+    user.value = u
+    signInStatus.value = null
+    persist()
+  }
+
   function setUser(u) {
     user.value = u
     persist()
   }
 
-  return { token, user, signInStatus, isLoggedIn, login, register, fetchMe, signIn, fetchSignInStatus, logout, setUser }
+  return { token, user, signInStatus, isLoggedIn, login, register, fetchMe, signIn, fetchSignInStatus, logout, applySession, setUser }
 })

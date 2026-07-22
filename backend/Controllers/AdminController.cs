@@ -49,6 +49,16 @@ public class AdminController : ControllerBase
         return Ok(new ApiMessage("已删除"));
     }
 
+    [HttpPost("users/{id:int}/login-as")]
+    public async Task<ActionResult<AuthResponse>> LoginAsUser(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (result, error) = await _admin.LoginAsUserAsync(uid.Value, id);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
     [HttpPut("users/{id:int}/role")]
     public async Task<IActionResult> UpdateRole(int id, [FromBody] UpdateRoleRequest req)
     {

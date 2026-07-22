@@ -261,15 +261,17 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("{id:int}/activity")]
-    public async Task<ActionResult<List<ActivityItemDto>>> GetActivity(int id)
+    public async Task<ActionResult<PagedResult<ActivityItemDto>>> GetActivity(
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         if (await _auth.GetProfileAsync(id) == null) return NotFound(new ApiMessage("用户不存在"));
-        return Ok(await _auth.GetActivityAsync(id));
+        return Ok(await _auth.GetActivityAsync(id, page, pageSize));
     }
 
     [Authorize]
     [HttpGet("{id:int}/purchases")]
-    public async Task<ActionResult<List<PurchaseHistoryDto>>> GetPurchases(int id)
+    public async Task<ActionResult<PagedResult<PurchaseHistoryDto>>> GetPurchases(
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         var uid = JwtHelper.GetUserId(User);
         var isAdmin = User.IsInRole("Admin");
@@ -277,12 +279,13 @@ public class UsersController : ControllerBase
         if (target == null) return NotFound(new ApiMessage("用户不存在"));
         if (uid != id && !isAdmin && !target.ShowPurchases)
             return StatusCode(403, new ApiMessage("对方未公开该内容"));
-        return Ok(await _threads.GetPurchasesAsync(id));
+        return Ok(await _threads.GetPurchasesAsync(id, page, pageSize));
     }
 
     [Authorize]
     [HttpGet("{id:int}/favorites")]
-    public async Task<ActionResult<List<FavoriteItemDto>>> GetFavorites(int id, [FromQuery] int? folderId = null)
+    public async Task<ActionResult<PagedResult<FavoriteItemDto>>> GetFavorites(
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] int? folderId = null)
     {
         var uid = JwtHelper.GetUserId(User);
         var isAdmin = User.IsInRole("Admin");
@@ -290,6 +293,6 @@ public class UsersController : ControllerBase
         if (target == null) return NotFound(new ApiMessage("用户不存在"));
         if (uid != id && !isAdmin && !target.ShowFavorites)
             return StatusCode(403, new ApiMessage("对方未公开该内容"));
-        return Ok(await _threads.GetFavoritesAsync(id, folderId));
+        return Ok(await _threads.GetFavoritesAsync(id, folderId, page, pageSize));
     }
 }

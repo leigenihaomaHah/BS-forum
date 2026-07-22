@@ -36,6 +36,35 @@ public class MessagesController : ControllerBase
         return Ok(new { count = await _messages.UnreadCountAsync(uid.Value) });
     }
 
+    [HttpPut("read-all")]
+    public async Task<ActionResult<object>> MarkAllRead()
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var n = await _messages.MarkAllReadAsync(uid.Value);
+        return Ok(new { count = n, message = n > 0 ? $"已标记 {n} 条为已读" : "没有未读私信" });
+    }
+
+    [HttpPut("with/{peerId:int}/read")]
+    public async Task<ActionResult<object>> MarkConversationRead(int peerId)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (count, error) = await _messages.MarkConversationReadAsync(uid.Value, peerId);
+        if (error != null) return NotFound(new ApiMessage(error));
+        return Ok(new { count });
+    }
+
+    [HttpPut("with/{peerId:int}/unread")]
+    public async Task<IActionResult> MarkConversationUnread(int peerId)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (ok, error) = await _messages.MarkConversationUnreadAsync(uid.Value, peerId);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已标为未读"));
+    }
+
     [HttpGet("with/{peerId:int}")]
     public async Task<ActionResult<List<PrivateMessageDto>>> Thread(int peerId)
     {

@@ -254,10 +254,29 @@ a:hover {
 .user-assets {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  flex-wrap: nowrap;
+  gap: 6px 10px;
   font-size: 13px;
   color: var(--ink-soft);
+  min-width: 0;
+}
+
+.user-assets a {
+  margin-left: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .user-assets .next-level-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .util-bar > div:first-child {
+    display: none;
+  }
 }
 
 .asset-chip {
@@ -766,6 +785,9 @@ a:hover {
 }
 
 .btn-outline-modern {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   background: #fff;
   color: var(--ink-soft);
@@ -773,6 +795,7 @@ a:hover {
   padding: 6px 14px;
   font-size: 13px;
   font-weight: 600;
+  text-decoration: none;
   transition: all 0.2s ease;
 }
 

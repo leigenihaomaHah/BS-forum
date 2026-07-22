@@ -62,6 +62,12 @@
               <button
                 v-if="!u.isAdmin"
                 class="admin-btn admin-btn-outline"
+                :disabled="loggingAs === u.id"
+                @click="loginAs(u)"
+              >{{ loggingAs === u.id ? '切换中...' : '单点登录' }}</button>
+              <button
+                v-if="!u.isAdmin"
+                class="admin-btn admin-btn-outline"
                 @click="u.isMuted ? unmuteUser(u) : openMute(u)"
               >{{ u.isMuted ? '解禁' : '禁言' }}</button>
               <button class="admin-btn admin-btn-danger" @click="delUser(u.id)">删除</button>
@@ -146,13 +152,16 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../../api/http'
+import { useAuthStore } from '../../stores/auth'
 import { useToastStore } from '../../stores/toast'
 import { defaultAvatar } from '../../utils/avatar.js'
 import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
+const auth = useAuthStore()
+const router = useRouter()
 
 const route = useRoute()
 const items = ref([])
@@ -162,6 +171,7 @@ const pageSize = ref(20)
 const search = ref('')
 const mutedFilter = ref(route.query.muted === '1' ? '1' : '')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const loggingAs = ref(null)
 
 const editing = ref(null)
 const editForm = ref({})
@@ -273,6 +283,21 @@ async function delUser(id) {
     await api.delete(`/admin/users/${id}`)
     await load(page.value)
   } catch (e) { toast.error(e.message) }
+}
+
+async function loginAs(u) {
+  if (!confirm(`确定以「${u.nickname}」身份登录？\n当前管理员会话将被替换，需要重新登录后台。`)) return
+  loggingAs.value = u.id
+  try {
+    const { data } = await api.post(`/admin/users/${u.id}/login-as`)
+    auth.applySession(data.token, data.user)
+    toast.success(`已切换为 ${u.nickname}`)
+    await router.push('/')
+  } catch (e) {
+    toast.error(e.message)
+  } finally {
+    loggingAs.value = null
+  }
 }
 
 load(1)
