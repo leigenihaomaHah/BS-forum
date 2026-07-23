@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Models;
@@ -60,7 +60,7 @@ public class RetentionService
         draft.TagsJson = req.Tags == null ? null : JsonSerializer.Serialize(req.Tags.Take(3), JsonOpts);
         draft.PollOptionsJson = req.PollOptions == null ? null : JsonSerializer.Serialize(req.PollOptions.Take(6), JsonOpts);
         draft.ImagesJson = req.Images == null ? null : JsonSerializer.Serialize(req.Images.Take(8), JsonOpts);
-        draft.UpdatedAt = DateTime.UtcNow;
+        draft.UpdatedAt = ChinaTime.Now;
         await _db.SaveChangesAsync();
         return ToDraftDto(draft);
     }
@@ -100,11 +100,11 @@ public class RetentionService
         var row = await _db.BrowseHistories.FirstOrDefaultAsync(h => h.UserId == userId && h.ThreadId == threadId);
         if (row == null)
         {
-            _db.BrowseHistories.Add(new BrowseHistory { UserId = userId, ThreadId = threadId, ViewedAt = DateTime.UtcNow });
+            _db.BrowseHistories.Add(new BrowseHistory { UserId = userId, ThreadId = threadId, ViewedAt = ChinaTime.Now });
         }
         else
         {
-            row.ViewedAt = DateTime.UtcNow;
+            row.ViewedAt = ChinaTime.Now;
         }
 
         // keep at most 100
@@ -154,8 +154,8 @@ public class RetentionService
         {
             UserId = userId,
             ForumId = forumId,
-            LastReadAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow
+            LastReadAt = ChinaTime.Now,
+            CreatedAt = ChinaTime.Now
         });
         await _db.SaveChangesAsync();
         return (new SubscribeResultDto(true, "订阅成功"), null);
@@ -165,7 +165,7 @@ public class RetentionService
     {
         var sub = await _db.ForumSubscriptions.FirstOrDefaultAsync(s => s.UserId == userId && s.ForumId == forumId);
         if (sub == null) return;
-        sub.LastReadAt = DateTime.UtcNow;
+        sub.LastReadAt = ChinaTime.Now;
         await _db.SaveChangesAsync();
     }
 
@@ -208,7 +208,7 @@ public class RetentionService
                 FromUserId = authorId,
                 FromNickname = authorNickname,
                 Content = "你订阅的版块有新帖",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             });
         }
         await _db.SaveChangesAsync();

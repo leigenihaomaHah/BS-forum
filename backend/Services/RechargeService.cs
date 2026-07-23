@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Models;
@@ -67,7 +67,7 @@ public class RechargeService
             Status = "pending",
             Channel = "manual",
             Remark = string.IsNullOrWhiteSpace(req.Remark) ? null : req.Remark.Trim(),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         };
         _db.RechargeOrders.Add(order);
         await _db.SaveChangesAsync();
@@ -129,7 +129,9 @@ public class RechargeService
                         var u = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == usedBy.Value);
                         if (u != null) who = $"{u.Nickname}({u.Username})";
                     }
-                    var when = card.UsedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
+                    var when = card.UsedAt.HasValue
+                        ? ChinaTime.SpecifyAsChina(card.UsedAt.Value).ToString("yyyy-MM-dd HH:mm")
+                        : "";
                     await tx.RollbackAsync();
                     return (null, $"卡密已被使用（{who}{(string.IsNullOrEmpty(when) ? "" : " · " + when)}）。请使用未使用的新卡密。");
                 }
@@ -159,7 +161,7 @@ public class RechargeService
                 Status = "pending",
                 Channel = "card",
                 CardCode = card.Code,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             };
             _db.RechargeOrders.Add(order);
 
@@ -204,7 +206,7 @@ public class RechargeService
             {
                 Code = code,
                 PackageId = order.PackageId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             };
             _db.RechargeCards.Add(card);
 
@@ -235,7 +237,7 @@ public class RechargeService
     {
         FulfillOrder(order, user, adminId);
         card.UsedByUserId = user.Id;
-        card.UsedAt = DateTime.UtcNow;
+        card.UsedAt = ChinaTime.Now;
     }
 
     public async Task<(bool Ok, string? Error)> CancelOrderAsync(int userId, int orderId, bool isAdmin)
@@ -276,7 +278,7 @@ public class RechargeService
             {
                 Code = GenCardCode(),
                 PackageId = packageId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             };
             _db.RechargeCards.Add(card);
             created.Add(card);
@@ -325,9 +327,9 @@ public class RechargeService
         if (wasPermanent)
             return;
 
-        var baseTime = user.VipUntil.HasValue && user.VipUntil.Value > DateTime.UtcNow
+        var baseTime = user.VipUntil.HasValue && user.VipUntil.Value > ChinaTime.Now
             ? user.VipUntil.Value
-            : DateTime.UtcNow;
+            : ChinaTime.Now;
         user.VipUntil = baseTime.AddDays(vipDays!.Value);
     }
 
@@ -348,12 +350,12 @@ public class RechargeService
                 Reason = "recharge",
                 RefType = "recharge_order",
                 RefId = order.Id,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             });
         }
 
         order.Status = "paid";
-        order.PaidAt = DateTime.UtcNow;
+        order.PaidAt = ChinaTime.Now;
         order.ConfirmedByAdminId = adminId;
     }
 

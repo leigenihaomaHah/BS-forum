@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class ForumThread
 {
@@ -20,8 +20,8 @@ public class ForumThread
     public bool IsEssence { get; set; }
     /// <summary>Whether author already received essence reward (no re-award).</summary>
     public bool EssenceAwarded { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime LastReplyAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
+    public DateTime LastReplyAt { get; set; } = ChinaTime.Now;
 
     public Forum Forum { get; set; } = null!;
     public User Author { get; set; } = null!;

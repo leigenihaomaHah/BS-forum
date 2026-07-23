@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,13 +16,13 @@ public class SiteSettingsService
 
     public async Task<Dictionary<string, string>> GetAllAsync()
     {
-        if (_cache != null && DateTime.UtcNow - _cacheAt < CacheTtl)
+        if (_cache != null && ChinaTime.Now - _cacheAt < CacheTtl)
             return new Dictionary<string, string>(_cache);
 
         var dict = await _db.SiteSettings.AsNoTracking()
             .ToDictionaryAsync(s => s.Key, s => s.Value);
         _cache = dict;
-        _cacheAt = DateTime.UtcNow;
+        _cacheAt = ChinaTime.Now;
         return new Dictionary<string, string>(dict);
     }
 

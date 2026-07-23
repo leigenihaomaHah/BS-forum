@@ -59,9 +59,16 @@
           </div>
           <input v-model="tagsInput" class="form-control mb-2" maxlength="40" placeholder="标签，逗号分隔，最多 3 个（可选）" />
 
-          <MarkdownEditor v-model="content" class="mb-2" :rows="10" :hint="mdHint" placeholder="正文内容（可用 @昵称 提醒他人，支持 Markdown）" />
+          <MarkdownEditor
+            v-model="content"
+            class="mb-2"
+            :rows="10"
+            :hint="mdHint"
+            placeholder="正文内容（可用 @昵称 提醒他人，支持 Markdown；可 Ctrl+V 粘贴图片）"
+            @paste-images="appendImageFiles"
+          />
 
-          <div class="image-upload mb-2">
+          <div class="image-upload mb-2" tabindex="0" @paste="onImageAreaPaste">
             <div class="image-preview-list">
               <div v-for="(img, idx) in images" :key="idx" class="image-preview-item">
                 <img :src="img" class="preview-thumb" alt="" @click="previewIdx = idx" />
@@ -74,7 +81,7 @@
               </label>
             </div>
             <div class="text-muted" style="font-size: 12px; margin-top: 6px">
-              支持 JPG / PNG / GIF，最多 8 张
+              支持 JPG / PNG / GIF，最多 8 张 · 可 Ctrl+V 粘贴截图
             </div>
           </div>
 
@@ -114,7 +121,7 @@ import { useToastStore } from '../stores/toast'
 import { canCreateThread, getNextLevel } from '../config/levels.js'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { markdownHint } from '../utils/markdown.js'
-import { compressImage } from '../utils/image.js'
+import { compressImage, filesFromClipboard } from '../utils/image.js'
 import { uploadImages } from '../utils/upload.js'
 
 const route = useRoute()
@@ -279,18 +286,34 @@ function scheduleAutosave() {
 watch([title, content, threadType, coinPrice, tagsInput, pollOptions, images], () => { scheduleAutosave(); scheduleLocalAutosave() }, { deep: true })
 
 function addImages(e) {
-  const files = Array.from(e.target.files || [])
+  appendImageFiles(Array.from(e.target.files || []))
+  e.target.value = ''
+}
+
+function onImageAreaPaste(e) {
+  const files = filesFromClipboard(e.clipboardData)
+  if (!files.length) return
+  e.preventDefault()
+  appendImageFiles(files)
+}
+
+function appendImageFiles(files) {
+  if (!files?.length) return
   const remaining = 8 - images.value.length
+  if (remaining <= 0) {
+    error.value = '最多上传 8 张图片'
+    return
+  }
   for (const file of files.slice(0, remaining)) {
     if (file.size > 10 * 1024 * 1024) {
-      error.value = `"${file.name}" 超过 10MB 限制`
+      error.value = `"${file.name || '图片'}" 超过 10MB 限制`
       continue
     }
     compressImage(file, 1920, 0.85).then((dataUrl) => {
+      if (images.value.length >= 8) return
       images.value.push(dataUrl)
     })
   }
-  e.target.value = ''
 }
 
 function removeImage(idx) {

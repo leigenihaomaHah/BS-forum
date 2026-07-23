@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 /// <summary>会员充值套餐：月/季/年/永久。</summary>
 public class RechargePackage
@@ -33,7 +33,7 @@ public class RechargeOrder
     public string? CardCode { get; set; }
     public string? Remark { get; set; }
     public int? ConfirmedByAdminId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public DateTime? PaidAt { get; set; }
 
     public User User { get; set; } = null!;
@@ -47,7 +47,7 @@ public class RechargeCard
     public int PackageId { get; set; }
     public int? UsedByUserId { get; set; }
     public DateTime? UsedAt { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 
     public RechargePackage Package { get; set; } = null!;
 }

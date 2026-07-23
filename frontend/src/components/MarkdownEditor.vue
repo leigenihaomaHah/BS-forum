@@ -50,6 +50,7 @@
         :value="modelValue"
         @input="onInput"
         @keydown="onKeydown"
+        @paste="onPaste"
         @scroll="positionMention"
         class="form-control md-textarea"
         :class="{ 'md-textarea-sm': compact }"
@@ -87,6 +88,7 @@
 import { ref, watch } from 'vue'
 import api from '../api/http'
 import MarkdownBody from './MarkdownBody.vue'
+import { filesFromClipboard } from '../utils/image.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -96,7 +98,7 @@ const props = defineProps({
   hint: { type: String, default: '' },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'paste-images'])
 
 const tab = ref('write')
 const ta = ref(null)
@@ -108,6 +110,13 @@ const mentionIdx = ref(0)
 const mentionTop = ref(0)
 const mentionLeft = ref(0)
 let mentionTimer = null
+
+function onPaste(e) {
+  const files = filesFromClipboard(e.clipboardData)
+  if (!files.length) return
+  e.preventDefault()
+  emit('paste-images', files)
+}
 
 function focus() {
   ta.value?.focus()

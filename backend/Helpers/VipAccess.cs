@@ -1,4 +1,4 @@
-using ForumApi.Models;
+﻿using ForumApi.Models;
 
 namespace ForumApi.Helpers;
 
@@ -77,7 +77,7 @@ public static class VipAccess
 
     public static void ClearExpired(User user)
     {
-        if (user.IsVip && user.VipUntil.HasValue && user.VipUntil.Value <= DateTime.UtcNow)
+        if (user.IsVip && user.VipUntil.HasValue && user.VipUntil.Value <= ChinaTime.Now)
         {
             user.IsVip = false;
             user.VipUntil = null;

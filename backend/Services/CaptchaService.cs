@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -18,7 +18,7 @@ public class CaptchaService
         Cleanup();
         var code = new string(Enumerable.Range(0, 4).Select(_ => Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]).ToArray());
         var id = Guid.NewGuid().ToString("N");
-        _store[id] = new CaptchaEntry(code, DateTime.UtcNow.Add(Ttl));
+        _store[id] = new CaptchaEntry(code, ChinaTime.Now.Add(Ttl));
         return (id, RenderSvgBase64(code));
     }
 
@@ -28,14 +28,14 @@ public class CaptchaService
             return false;
         if (!_store.TryRemove(id.Trim(), out var entry))
             return false;
-        if (entry.ExpiresAt < DateTime.UtcNow)
+        if (entry.ExpiresAt < ChinaTime.Now)
             return false;
         return string.Equals(entry.Code, code.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private void Cleanup()
     {
-        var now = DateTime.UtcNow;
+        var now = ChinaTime.Now;
         foreach (var kv in _store)
         {
             if (kv.Value.ExpiresAt < now)

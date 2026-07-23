@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class HomeBanner
 {
@@ -9,6 +9,6 @@ public class HomeBanner
     public string? LinkUrl { get; set; }
     public int SortOrder { get; set; }
     public bool Enabled { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
+    public DateTime UpdatedAt { get; set; } = ChinaTime.Now;
 }

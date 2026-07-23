@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class ModerationLog
 {
@@ -8,7 +8,7 @@ public class ModerationLog
     public int TargetId { get; set; }
     public string Action { get; set; } = string.Empty;
     public string? Reason { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 
     public User Admin { get; set; } = null!;
 }

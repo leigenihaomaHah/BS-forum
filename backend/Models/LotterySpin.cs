@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class LotterySpin
 {
@@ -9,7 +9,7 @@ public class LotterySpin
     public int PrizePoints { get; set; }
     public string PrizeLabel { get; set; } = string.Empty;
     public bool IsFree { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 
     public User User { get; set; } = null!;
 }

@@ -1,13 +1,46 @@
-/** 解析接口时间：后端存 UTC，旧响应常缺 Z，按 UTC 解释后再转本地显示。 */
+/** 全站按北京时间（Asia/Shanghai）解析与展示。 */
+
+const BEIJING = 'Asia/Shanghai'
+
+function hasExplicitTz(s) {
+  return /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)
+}
+
+/** 将接口时间解析为 Date（内部瞬时正确，展示用北京时区格式化）。 */
 export function parseApiTime(iso) {
   if (!iso) return null
   if (iso instanceof Date) return Number.isNaN(iso.getTime()) ? null : iso
   const s = String(iso).trim()
   if (!s) return null
-  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)
   const normalized = s.includes('T') ? s : s.replace(' ', 'T')
-  const d = new Date(hasTz ? normalized : `${normalized}Z`)
+  // 无时区：按北京墙钟；有 Z/+00：按标注时区（再格式化为北京时间）
+  const d = new Date(hasExplicitTz(normalized) ? normalized : `${normalized}+08:00`)
   return Number.isNaN(d.getTime()) ? null : d
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0')
+}
+
+/** 用北京时间取年月日时分 */
+function beijingParts(d) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BEIJING,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = Object.fromEntries(fmt.formatToParts(d).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]))
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour === '24' ? '00' : parts.hour,
+    minute: parts.minute,
+  }
 }
 
 export function timeAgo(iso) {
@@ -26,7 +59,7 @@ export function timeAgo(iso) {
   return formatTime(iso, false)
 }
 
-/** 列表「最后发表」：一天内相对时间，否则月-日 时:分 */
+/** 列表「最后发表」：一天内相对时间，否则月-日 时:分（北京时间） */
 export function formatListTime(iso) {
   const d = parseApiTime(iso)
   if (!d) return ''
@@ -45,18 +78,18 @@ export function formatCount(n) {
 export function formatTime(iso, showYear = true) {
   const d = parseApiTime(iso)
   if (!d) return ''
-  const pad = (n) => String(n).padStart(2, '0')
+  const p = beijingParts(d)
   if (showYear) {
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`
   }
-  return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${Number(p.month)}-${p.day} ${p.hour}:${p.minute}`
 }
 
 export function formatDateOnly(iso) {
   const d = parseApiTime(iso)
   if (!d) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const p = beijingParts(d)
+  return `${p.year}-${p.month}-${p.day}`
 }
 
 /** 是否视为新帖（24 小时内发布） */

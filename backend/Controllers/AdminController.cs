@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Services;
@@ -478,13 +478,13 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ExportUsers()
     {
         var csv = await _admin.ExportUsersCsvAsync();
-        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"users_{DateTime.UtcNow:yyyyMMdd}.csv");
+        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"users_{ChinaTime.Now:yyyyMMdd}.csv");
     }
 
     [HttpGet("export/threads")]
     public async Task<IActionResult> ExportThreads()
     {
         var csv = await _admin.ExportThreadsCsvAsync();
-        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"threads_{DateTime.UtcNow:yyyyMMdd}.csv");
+        return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"threads_{ChinaTime.Now:yyyyMMdd}.csv");
     }
 }

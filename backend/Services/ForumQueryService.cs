@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Models;
@@ -23,7 +23,7 @@ public class ForumQueryService
         if (viewerUserId.HasValue)
             viewer = await _db.Users.FindAsync(viewerUserId.Value);
 
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var categories = await _db.Categories
             .Include(c => c.Forums)
             .OrderBy(c => c.SortOrder)
@@ -84,7 +84,7 @@ public class ForumQueryService
         if (!VipAccess.CanAccessForum(viewer, f.MinVipTier))
             return (null, VipAccess.AccessDeniedMessage(f.MinVipTier));
 
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var todayCount = await _db.Threads.CountAsync(t => t.ForumId == forumId && t.CreatedAt >= today && !t.IsHidden && !t.PendingReview);
         var lt = await _db.Threads.Include(t => t.Author)
             .Where(t => t.ForumId == forumId && !t.IsHidden && !t.PendingReview)

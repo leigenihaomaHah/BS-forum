@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -306,7 +306,7 @@ public static class BulkContentSeeder
                 Points = points,
                 Coins = 40 + Random.Shared.Next(80),
                 InviteCode = $"SEED{user.ToUpperInvariant()}",
-                CreatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(30, 200)),
+                CreatedAt = ChinaTime.Now.AddDays(-Random.Shared.Next(30, 200)),
             };
             db.Users.Add(u);
         }
@@ -331,7 +331,7 @@ public static class BulkContentSeeder
 
         var list = pool.OrderBy(_ => rng.Next()).Take(Math.Min(count, pool.Length)).ToList();
         while (list.Count < count)
-            list.Add($"{forumName}日常分享 #{list.Count + 1} · {DateTime.UtcNow:MMdd}-{rng.Next(100, 999)}");
+            list.Add($"{forumName}日常分享 #{list.Count + 1} · {ChinaTime.Now:MMdd}-{rng.Next(100, 999)}");
         return list;
     }
 
@@ -339,7 +339,7 @@ public static class BulkContentSeeder
         AppDbContext db, Forum forum, List<User> users, string title, Random rng)
     {
         var author = users[rng.Next(users.Count)];
-        var created = DateTime.UtcNow.AddDays(-rng.Next(0, 45)).AddMinutes(-rng.Next(0, 24 * 60));
+        var created = ChinaTime.Now.AddDays(-rng.Next(0, 45)).AddMinutes(-rng.Next(0, 24 * 60));
         var seedKey = rng.Next(1, 100_000);
         var thread = new ForumThread
         {

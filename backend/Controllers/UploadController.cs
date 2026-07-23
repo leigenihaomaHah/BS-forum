@@ -1,4 +1,4 @@
-using ForumApi.Dtos;
+﻿using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -60,7 +60,7 @@ public class UploadController : ControllerBase
             if (!IsAllowedImageMagic(bytes.AsSpan(0, Math.Min(12, bytes.Length))))
                 return BadRequest(new ApiMessage($"文件 \"{file.FileName}\" 内容校验失败，请上传真实图片"));
 
-            var name = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}{ext}";
+            var name = $"{ChinaTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}{ext}";
             var path = Path.Combine(basePath, name);
             await System.IO.File.WriteAllBytesAsync(path, bytes);
             urls.Add($"/uploads/{name}");

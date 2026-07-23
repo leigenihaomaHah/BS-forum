@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -28,15 +28,10 @@ public class SitePulseService
 
     async Task<SitePulseDto> ComputeAsync()
     {
-        var tz = ResolveChinaTimeZone();
-        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        var todayLocal = nowLocal.Date;
-        var tomorrowLocal = todayLocal.AddDays(1);
-        var yesterdayLocal = todayLocal.AddDays(-1);
-
-        var todayStart = TimeZoneInfo.ConvertTimeToUtc(todayLocal, tz);
-        var tomorrowStart = TimeZoneInfo.ConvertTimeToUtc(tomorrowLocal, tz);
-        var yesterdayStart = TimeZoneInfo.ConvertTimeToUtc(yesterdayLocal, tz);
+        // 业务库时间即为北京时间墙钟
+        var todayStart = ChinaTime.Today;
+        var tomorrowStart = todayStart.AddDays(1);
+        var yesterdayStart = todayStart.AddDays(-1);
 
         var visibleThreads = _db.Threads.Where(t => !t.IsHidden && !t.PendingReview);
 
@@ -53,18 +48,5 @@ public class SitePulseService
         var yesterdayReplies = await visibleReplies.CountAsync(p => p.CreatedAt >= yesterdayStart && p.CreatedAt < todayStart);
 
         return new SitePulseDto(todayThreads, yesterdayThreads, todayReplies, yesterdayReplies, "Asia/Shanghai");
-    }
-
-    static TimeZoneInfo ResolveChinaTimeZone()
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(
-                OperatingSystem.IsWindows() ? "China Standard Time" : "Asia/Shanghai");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.CreateCustomTimeZone("Asia/Shanghai", TimeSpan.FromHours(8), "CST", "CST");
-        }
     }
 }

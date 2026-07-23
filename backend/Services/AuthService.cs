@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
@@ -171,7 +171,7 @@ public class AuthService
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return null;
 
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var todaySignedIn = user.LastSignInDate?.Date == today;
         var totalDays = await _db.SignInRecords.CountAsync(r => r.UserId == userId);
 
@@ -212,7 +212,7 @@ public class AuthService
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return (null, "用户不存在");
 
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         if (user.LastSignInDate?.Date == today)
             return (null, "今日已签到");
 
@@ -231,7 +231,7 @@ public class AuthService
             coins += milestone.CoinsBonus;
         }
 
-        user.LastSignInDate = DateTime.UtcNow;
+        user.LastSignInDate = ChinaTime.Now;
         user.Points += points;
         user.Coins += coins;
 
@@ -269,7 +269,7 @@ public class AuthService
 
     public async Task<UserDto> ToUserDtoAsync(User user)
     {
-        if (user.IsMuted && user.MutedUntil.HasValue && user.MutedUntil.Value <= DateTime.UtcNow)
+        if (user.IsMuted && user.MutedUntil.HasValue && user.MutedUntil.Value <= ChinaTime.Now)
         {
             user.IsMuted = false;
             user.MutedUntil = null;
@@ -278,7 +278,7 @@ public class AuthService
         }
 
         var levelName = await _levels.GetLevelNameAsync(user.Level);
-        var signedInToday = user.LastSignInDate?.Date == DateTime.UtcNow.Date;
+        var signedInToday = user.LastSignInDate?.Date == ChinaTime.Today;
         var role = user.IsAdmin ? "admin" : "user";
         var muted = user.IsEffectivelyMuted();
         CommunityService.ClearExpiredVip(user);

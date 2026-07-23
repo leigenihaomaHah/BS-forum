@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
@@ -40,9 +40,9 @@ public class AdminService
 
     public async Task<AdminStatsDto> GetStatsAsync()
     {
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var tomorrow = today.AddDays(1);
-        var now = DateTime.UtcNow;
+        var now = ChinaTime.Now;
 
         var totalUsers = await _db.Users.CountAsync();
         var totalThreads = await _db.Threads.CountAsync();
@@ -212,7 +212,7 @@ public class AdminService
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var now = DateTime.UtcNow;
+        var now = ChinaTime.Now;
         var q = _db.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -552,7 +552,7 @@ public class AdminService
 
     public async Task<AdminSignInStatsDto> GetSignInStatsAsync()
     {
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var todayCount = await _db.SignInRecords.CountAsync(r => r.SignInDate == today);
         var users = await _db.Users.ToListAsync();
         var signTotals = await _db.SignInRecords
@@ -668,7 +668,7 @@ public class AdminService
 
         user.IsMuted = true;
         user.MuteReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
-        user.MutedUntil = days is > 0 ? DateTime.UtcNow.AddDays(days.Value) : null;
+        user.MutedUntil = days is > 0 ? ChinaTime.Now.AddDays(days.Value) : null;
         await LogAsync(adminId, "user", userId, "mute", reason);
         await _db.SaveChangesAsync();
 
@@ -735,8 +735,8 @@ public class AdminService
             LinkUrl = link,
             SortOrder = req.SortOrder,
             Enabled = req.Enabled,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = ChinaTime.Now,
+            UpdatedAt = ChinaTime.Now,
         };
         _db.HomeBanners.Add(banner);
         await _db.SaveChangesAsync();
@@ -756,7 +756,7 @@ public class AdminService
         banner.LinkUrl = link;
         banner.SortOrder = req.SortOrder;
         banner.Enabled = req.Enabled;
-        banner.UpdatedAt = DateTime.UtcNow;
+        banner.UpdatedAt = ChinaTime.Now;
         await _db.SaveChangesAsync();
         return (ToBannerDto(banner), null);
     }
@@ -802,7 +802,7 @@ public class AdminService
             TargetId = targetId,
             Action = action,
             Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }
@@ -909,7 +909,7 @@ public class AdminService
                 FromUserId = 0,
                 FromNickname = "系统",
                 Content = content.Trim(),
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             });
         }
         else
@@ -926,7 +926,7 @@ public class AdminService
                     FromUserId = 0,
                     FromNickname = "系统",
                     Content = content.Trim(),
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = ChinaTime.Now
                 });
             }
         }

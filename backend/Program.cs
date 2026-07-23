@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using ForumApi.Data;
 using ForumApi.Helpers;
 using ForumApi.Services;
@@ -16,8 +16,8 @@ builder.WebHost.ConfigureKestrel(opt =>
 
 builder.Services.AddControllers().AddJsonOptions(o =>
 {
-    o.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
-    o.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeJsonConverter());
+    o.JsonSerializerOptions.Converters.Add(new ChinaDateTimeJsonConverter());
+    o.JsonSerializerOptions.Converters.Add(new ChinaNullableDateTimeJsonConverter());
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -117,7 +117,7 @@ using (var scope = app.Services.CreateScope())
         var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbFilePath)) ?? contentRoot;
         Directory.CreateDirectory(dbDir);
         var probe = Path.Combine(dbDir, ".write_probe");
-        await File.WriteAllTextAsync(probe, DateTime.UtcNow.ToString("o"));
+        await File.WriteAllTextAsync(probe, ChinaTime.Now.ToString("o"));
         File.Delete(probe);
 
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

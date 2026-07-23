@@ -52,16 +52,17 @@
             <button v-if="auth.isLoggedIn" class="btn-outline-modern" @click="reportThread">举报</button>
             <span class="text-muted" style="font-size: 12px; font-weight: 400">
               {{ thread.views }} 浏览 · {{ thread.replyCount }} 回复 · {{ thread.likeCount }} 赞
+              <template v-if="thread.tipCoins > 0"> · 打赏 {{ thread.tipCoins }} 金币</template>
             </span>
             <button class="btn-outline-modern" :class="{ active: favorited }" @click="toggleFavorite">
               {{ favorited ? '已收藏' : '收藏' }}
             </button>
             <button
-              class="btn-outline-modern"
-              :disabled="thread.repliesLocked || auth.user?.isMuted"
-              @click="showTipInput = !showTipInput"
+              v-if="canTipAuthor"
+              class="btn-outline-modern tip-btn"
+              @click="openTipPanel"
             >
-              打赏
+              打赏楼主
             </button>
             <button class="btn-outline-modern" :disabled="thread.likedByMe || thread.repliesLocked" @click="like">
               {{ thread.likedByMe ? '已赞' : '点赞' }}
@@ -90,14 +91,32 @@
         <div class="text-warning" style="font-size:13px;font-weight:600">本帖已禁止回复</div>
       </div>
 
-      <div v-if="showTipInput && !thread.repliesLocked" class="panel mb-3 p-3">
-        <div v-if="auth.user?.isMuted" class="text-warning" style="font-size:13px">账号已被禁言，暂时无法打赏</div>
-        <div v-else class="d-flex gap-2 align-items-center flex-wrap">
-          <span style="font-size:13px;font-weight:600">打赏楼主</span>
-          <input v-model.number="tipAmount" type="number" min="1" class="form-control" style="width:100px" placeholder="金币" />
-          <button class="btn btn-forum btn-sm" :disabled="tipping" @click="tipThread">{{ tipping ? '处理中...' : '打赏' }}</button>
-          <span v-if="tipError" class="text-danger" style="font-size:12px">{{ tipError }}</span>
-          <span v-if="tipSuccess" class="text-success" style="font-size:12px">{{ tipSuccess }}</span>
+      <div v-if="showTipInput" class="panel mb-3 tip-panel">
+        <div class="tip-panel-title">打赏楼主「{{ thread.author?.nickname }}」</div>
+        <div v-if="!auth.isLoggedIn" class="text-muted" style="font-size:13px">
+          请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后再打赏
+        </div>
+        <div v-else-if="auth.user?.isMuted" class="text-warning" style="font-size:13px">账号已被禁言，暂时无法打赏</div>
+        <div v-else class="tip-panel-body">
+          <div class="tip-presets">
+            <button
+              v-for="n in tipPresets"
+              :key="n"
+              type="button"
+              class="tip-chip"
+              :class="{ active: tipAmount === n }"
+              @click="tipAmount = n"
+            >{{ n }} 金币</button>
+          </div>
+          <div class="tip-custom">
+            <input v-model.number="tipAmount" type="number" min="1" max="9999" class="form-control tip-input" />
+            <button class="btn btn-forum btn-sm" :disabled="tipping || !tipAmount" @click="tipThread">
+              {{ tipping ? '处理中...' : '确认打赏' }}
+            </button>
+            <span class="tip-balance">余额 {{ auth.user?.coins ?? 0 }} 金币</span>
+          </div>
+          <div v-if="tipError" class="text-danger tip-msg">{{ tipError }}</div>
+          <div v-if="tipSuccess" class="text-success tip-msg">{{ tipSuccess }}</div>
         </div>
       </div>
 
@@ -161,8 +180,9 @@
           <ul class="post-side-stats">
             <li><span>等级</span><b>Lv.{{ post.author.level }}</b></li>
             <li><span>帖子</span><b>{{ post.author.postCount ?? 0 }}</b></li>
+            <li><span>精华</span><b>{{ post.author.essenceCount ?? 0 }}</b></li>
             <li><span>积分</span><b>{{ post.author.points }}</b></li>
-            <li v-if="post.author.createdAt"><span>注册</span><b>{{ formatTime(post.author.createdAt, false) }}</b></li>
+            <li v-if="post.author.createdAt"><span>注册</span><b>{{ formatDateOnly(post.author.createdAt) }}</b></li>
           </ul>
         </aside>
 
@@ -219,7 +239,7 @@
                   <a href="#" @click.prevent="scrollToFloor(post.replyToFloor)">#{{ post.replyToFloor }}</a>
                   {{ post.replyToNickname }}：{{ post.replyToContent }}
                 </div>
-                <MarkdownBody :content="post.content" />
+                <MarkdownBody v-if="postDisplayContent(post)" :content="postDisplayContent(post)" />
               </div>
             </template>
 
@@ -269,6 +289,12 @@
               class="post-foot-btn"
               @click="reportPost(post)"
             >举报</button>
+            <button
+              v-if="canTipAuthor && post.floor === 1 && !post.deleted"
+              type="button"
+              class="post-foot-btn tip-foot"
+              @click="openTipPanel"
+            >打赏楼主</button>
           </div>
 
           <!-- Nested replies -->
@@ -299,7 +325,7 @@
                 </div>
                 <div v-if="child.deleted" class="nested-text text-muted" style="font-style:italic">该回复已被删除</div>
                 <div v-else class="nested-text">
-                  <MarkdownBody :content="child.content" />
+                  <MarkdownBody v-if="postDisplayContent(child)" :content="postDisplayContent(child)" />
                 </div>
                 <div v-if="child.images?.length && !child.deleted" class="img-grid nested-imgs">
                   <div
@@ -351,8 +377,16 @@
                   回复 #{{ inlineReplyTo.floor }} {{ inlineReplyTo.author.nickname }}
                   <button type="button" class="btn-link" @click="setInlineTargetToRoot(post)">改为回复本楼</button>
                 </div>
-                <MarkdownEditor v-model="inlineReply" class="mb-2" :compact="true" :rows="3" :hint="mdHint" placeholder="说点什么…" />
-                <div class="reply-images mb-2">
+                <MarkdownEditor
+                  v-model="inlineReply"
+                  class="mb-2"
+                  :compact="true"
+                  :rows="3"
+                  :hint="mdHint"
+                  placeholder="说点什么…（可 Ctrl+V 粘贴图片）"
+                  @paste-images="onInlinePasteImages"
+                />
+                <div class="reply-images mb-2" tabindex="0" @paste="onInlineImageAreaPaste">
                   <div class="reply-img-list">
                     <div v-for="(img, idx) in inlineImages" :key="idx" class="reply-img-item">
                       <img :src="img" class="reply-img-thumb" alt="" />
@@ -400,9 +434,18 @@
               引用 #{{ replyTo.floor }} {{ replyTo.author.nickname }}
               <button type="button" class="btn-link" @click="replyTo = null">取消</button>
             </div>
-            <MarkdownEditor ref="replyTextarea" v-model="reply" class="mb-2" :compact="true" :rows="4" :hint="mdHint + ' · 纯文字至少 5 字'" placeholder="至少 5 个字… 可用 @昵称 提醒，支持 Markdown" />
+            <MarkdownEditor
+              ref="replyTextarea"
+              v-model="reply"
+              class="mb-2"
+              :compact="true"
+              :rows="4"
+              :hint="mdHint + ' · 纯文字至少 5 字'"
+              placeholder="至少 5 个字… 可用 @昵称 提醒，支持 Markdown；可 Ctrl+V 粘贴图片"
+              @paste-images="onReplyPasteImages"
+            />
 
-            <div class="reply-images mb-2">
+            <div class="reply-images mb-2" tabindex="0" @paste="onReplyImageAreaPaste">
               <div class="reply-img-list">
                 <div v-for="(img, idx) in replyImages" :key="idx" class="reply-img-item">
                   <img :src="img" class="reply-img-thumb" alt="" />
@@ -413,7 +456,7 @@
                   <span>+</span>
                 </label>
               </div>
-              <div class="text-muted" style="font-size:12px;margin-top:6px">支持 JPG / PNG / GIF，最多 8 张</div>
+              <div class="text-muted" style="font-size:12px;margin-top:6px">支持 JPG / PNG / GIF，最多 8 张 · 可 Ctrl+V 粘贴截图</div>
             </div>
 
             <div v-if="error" class="text-danger mb-2">{{ error }}</div>
@@ -443,7 +486,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch, computed } from 'vue'
+import { onMounted, ref, watch, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import AppLayout from '../components/AppLayout.vue'
@@ -453,9 +496,9 @@ import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import { useToastStore } from '../stores/toast'
 import { markdownHint } from '../utils/markdown.js'
-import { compressImage } from '../utils/image.js'
+import { compressImage, filesFromClipboard } from '../utils/image.js'
 import { uploadImages } from '../utils/upload.js'
-import { formatTime } from '../utils/time.js'
+import { formatTime, formatDateOnly } from '../utils/time.js'
 import { defaultAvatar } from '../utils/avatar.js'
 
 const route = useRoute()
@@ -585,10 +628,26 @@ const purchasing = ref(false)
 const purchaseError = ref('')
 const favorited = ref(false)
 const showTipInput = ref(false)
-const tipAmount = ref(1)
+const tipAmount = ref(5)
 const tipping = ref(false)
 const tipError = ref('')
 const tipSuccess = ref('')
+const tipPresets = [1, 5, 10, 50, 100]
+
+const canTipAuthor = computed(() => {
+  if (!thread.value) return false
+  if (!auth.isLoggedIn) return true // 显示入口，面板内引导登录
+  return auth.user?.id !== thread.value.author?.id
+})
+
+function openTipPanel() {
+  tipError.value = ''
+  tipSuccess.value = ''
+  showTipInput.value = true
+  nextTick(() => {
+    document.querySelector('.tip-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
+}
 const modBusy = ref(false)
 
 function openLightbox(images, idx) {
@@ -597,19 +656,68 @@ function openLightbox(images, idx) {
   lightboxOpen.value = true
 }
 
+/** 粘贴图时部分客户端会留下「[图片]」占位文案，有附图时不展示 */
+function postDisplayContent(post) {
+  const c = (post?.content || '').trim()
+  if (post?.images?.length && /^\[图片\](\s*\[图片\])*$/.test(c)) return ''
+  return post?.content || ''
+}
+
+function normalizeReplyContent(text, hasImages) {
+  const t = (text || '').trim()
+  if (hasImages && /^\[图片\](\s*\[图片\])*$/.test(t)) return ''
+  return text
+}
+
 function addReplyImages(e) {
-  const files = Array.from(e.target.files || [])
-  const remaining = 8 - replyImages.value.length
+  appendToImageList(replyImages, Array.from(e.target.files || []), (msg) => { error.value = msg })
+  e.target.value = ''
+}
+
+function addInlineImages(e) {
+  appendToImageList(inlineImages, Array.from(e.target.files || []), (msg) => { inlineError.value = msg })
+  e.target.value = ''
+}
+
+function onReplyPasteImages(files) {
+  appendToImageList(replyImages, files, (msg) => { error.value = msg })
+}
+
+function onInlinePasteImages(files) {
+  appendToImageList(inlineImages, files, (msg) => { inlineError.value = msg })
+}
+
+function onReplyImageAreaPaste(e) {
+  const files = filesFromClipboard(e.clipboardData)
+  if (!files.length) return
+  e.preventDefault()
+  appendToImageList(replyImages, files, (msg) => { error.value = msg })
+}
+
+function onInlineImageAreaPaste(e) {
+  const files = filesFromClipboard(e.clipboardData)
+  if (!files.length) return
+  e.preventDefault()
+  appendToImageList(inlineImages, files, (msg) => { inlineError.value = msg })
+}
+
+function appendToImageList(listRef, files, setError) {
+  if (!files?.length) return
+  const remaining = 8 - listRef.value.length
+  if (remaining <= 0) {
+    setError?.('最多上传 8 张图片')
+    return
+  }
   for (const file of files.slice(0, remaining)) {
     if (file.size > 10 * 1024 * 1024) {
-      error.value = `"${file.name}" 超过 10MB 限制`
+      setError?.(`"${file.name || '图片'}" 超过 10MB 限制`)
       continue
     }
     compressImage(file, 1920, 0.85).then((dataUrl) => {
-      replyImages.value.push(dataUrl)
+      if (listRef.value.length >= 8) return
+      listRef.value.push(dataUrl)
     })
   }
-  e.target.value = ''
 }
 
 async function loadPosts(p = 1) {
@@ -812,21 +920,6 @@ function closeInlineReply() {
   inlineError.value = ''
 }
 
-function addInlineImages(e) {
-  const files = Array.from(e.target.files || [])
-  const remaining = 8 - inlineImages.value.length
-  for (const file of files.slice(0, remaining)) {
-    if (file.size > 10 * 1024 * 1024) {
-      inlineError.value = `"${file.name}" 超过 10MB 限制`
-      continue
-    }
-    compressImage(file, 1920, 0.85).then((dataUrl) => {
-      inlineImages.value.push(dataUrl)
-    })
-  }
-  e.target.value = ''
-}
-
 async function submitInlineReply(rootPost) {
   inlineError.value = ''
   const text = inlineReply.value.trim()
@@ -852,7 +945,7 @@ async function submitInlineReply(rootPost) {
   try {
     const target = inlineReplyTo.value || rootPost
     const { data } = await api.post(`/threads/${route.params.id}/replies`, {
-      content: inlineReply.value,
+      content: normalizeReplyContent(inlineReply.value, images.length > 0),
       images,
       replyToPostId: target.id,
     })
@@ -950,7 +1043,7 @@ async function submitReply() {
   }
   try {
     const { data } = await api.post(`/threads/${route.params.id}/replies`, {
-      content: reply.value,
+      content: normalizeReplyContent(reply.value, images.length > 0),
       images,
       replyToPostId: replyTo.value?.id || null,
     })
@@ -998,15 +1091,26 @@ async function toggleFavorite() {
 async function tipThread() {
   if (!auth.isLoggedIn) {
     tipError.value = '请先登录'
+    authModal.openLogin()
+    return
+  }
+  const amount = Number(tipAmount.value)
+  if (!Number.isFinite(amount) || amount < 1) {
+    tipError.value = '请输入有效的金币数量'
     return
   }
   tipping.value = true
   tipError.value = ''
   tipSuccess.value = ''
   try {
-    const { data } = await api.post(`/threads/${route.params.id}/tip`, { amount: tipAmount.value })
+    const { data } = await api.post(`/threads/${route.params.id}/tip`, { amount })
     tipSuccess.value = data.message
+    if (thread.value) {
+      thread.value.tipCoins = (thread.value.tipCoins || 0) + amount
+      thread.value.tipCount = (thread.value.tipCount || 0) + 1
+    }
     await auth.fetchMe()
+    toast.success(data.message)
   } catch (e) {
     tipError.value = e.message
   } finally {
@@ -1446,5 +1550,66 @@ watch(() => route.query.p, async (p) => {
   flex: 1;
   min-width: 200px;
   margin-right: 12px;
+}
+.tip-btn {
+  color: #c2410c;
+  border-color: #fdba74;
+}
+.tip-btn:hover {
+  background: #fff7ed;
+}
+.tip-panel {
+  padding: 16px 18px;
+  border: 1px solid #fed7aa;
+  background: linear-gradient(180deg, #fffbeb 0%, #fff 70%);
+}
+.tip-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #9a3412;
+  margin-bottom: 12px;
+}
+.tip-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.tip-chip {
+  border: 1px solid #fdba74;
+  background: #fff;
+  color: #c2410c;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tip-chip.active,
+.tip-chip:hover {
+  background: #c2410c;
+  border-color: #c2410c;
+  color: #fff;
+}
+.tip-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.tip-input {
+  width: 110px;
+  max-width: 100%;
+}
+.tip-balance {
+  font-size: 12px;
+  color: #78716c;
+}
+.tip-msg {
+  margin-top: 10px;
+  font-size: 13px;
+}
+.post-foot-btn.tip-foot {
+  color: #c2410c;
 }
 </style>

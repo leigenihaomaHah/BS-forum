@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,12 +17,12 @@ public class HotService
 
     public async Task<List<HotThreadDto>> GetHotAsync(string period)
     {
-        var now = DateTime.UtcNow;
+        var now = ChinaTime.Now;
         var start = period.ToLowerInvariant() switch
         {
             "week" => StartOfWeek(now),
-            "month" => new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-            _ => now.Date
+            "month" => new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Unspecified),
+            _ => ChinaTime.Today
         };
 
         var threads = await _db.Threads

@@ -1,11 +1,11 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class UserFollow
 {
     public int Id { get; set; }
     public int FollowerId { get; set; }
     public int FolloweeId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public User Follower { get; set; } = null!;
     public User Followee { get; set; } = null!;
 }
@@ -55,7 +55,7 @@ public class UserInventory
     public string ItemType { get; set; } = string.Empty;
     public string? Meta { get; set; }
     public int Quantity { get; set; } = 1;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public User User { get; set; } = null!;
 }
 
@@ -64,7 +64,7 @@ public class UserBadge
     public int Id { get; set; }
     public int UserId { get; set; }
     public string BadgeCode { get; set; } = string.Empty;
-    public DateTime EarnedAt { get; set; } = DateTime.UtcNow;
+    public DateTime EarnedAt { get; set; } = ChinaTime.Now;
     public User User { get; set; } = null!;
 }
 
@@ -89,7 +89,7 @@ public class Report
     public string Status { get; set; } = "pending"; // pending | resolved | rejected
     public int? HandledByAdminId { get; set; }
     public string? HandleNote { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public DateTime? HandledAt { get; set; }
     public User Reporter { get; set; } = null!;
 }
@@ -99,7 +99,7 @@ public class ForumModerator
     public int Id { get; set; }
     public int ForumId { get; set; }
     public int UserId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public Forum Forum { get; set; } = null!;
     public User User { get; set; } = null!;
 }
@@ -120,5 +120,5 @@ public class PollVote
     public int ThreadId { get; set; }
     public int OptionId { get; set; }
     public int UserId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 }

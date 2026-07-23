@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class User
 {
@@ -12,7 +12,7 @@ public class User
     public int Level { get; set; } = 1;
     public DateTime? LastSignInDate { get; set; }
     public int ConsecutiveSignInDays { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public bool IsAdmin { get; set; }
     public bool IsMuted { get; set; }
     public DateTime? MutedUntil { get; set; }
@@ -41,7 +41,7 @@ public class User
     public bool IsEffectivelyVip()
     {
         if (!IsVip) return false;
-        if (VipUntil.HasValue && VipUntil.Value <= DateTime.UtcNow) return false;
+        if (VipUntil.HasValue && VipUntil.Value <= ChinaTime.Now) return false;
         return true;
     }
 
@@ -49,7 +49,7 @@ public class User
     public bool IsEffectivelyMuted()
     {
         if (!IsMuted) return false;
-        if (MutedUntil.HasValue && MutedUntil.Value <= DateTime.UtcNow) return false;
+        if (MutedUntil.HasValue && MutedUntil.Value <= ChinaTime.Now) return false;
         return true;
     }
 }

@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -84,7 +84,7 @@ public class LotteryService
         if (user == null) return (null, "用户不存在");
         if (user.IsEffectivelyMuted()) return (null, "账号已被禁言，暂时无法抽奖");
 
-        var todayStart = DateTime.UtcNow.Date;
+        var todayStart = ChinaTime.Today;
         var todayEnd = todayStart.AddDays(1);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
@@ -134,7 +134,7 @@ public class LotteryService
                 PrizePoints = prize.Points,
                 PrizeLabel = prize.Label,
                 IsFree = isFree,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = ChinaTime.Now,
             };
             _db.LotterySpins.Add(spin);
             await _db.SaveChangesAsync();
@@ -214,7 +214,7 @@ public class LotteryService
 
     private async Task<(int SpinsToday, bool FreeUsed)> GetTodayStatsAsync(int userId)
     {
-        var todayStart = DateTime.UtcNow.Date;
+        var todayStart = ChinaTime.Today;
         var todayEnd = todayStart.AddDays(1);
         var todaySpins = await _db.LotterySpins
             .Where(s => s.UserId == userId && s.CreatedAt >= todayStart && s.CreatedAt < todayEnd)

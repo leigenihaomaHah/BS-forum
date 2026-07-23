@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,7 +24,7 @@ public class RewardService
     {
         if (dailyLimit > 0)
         {
-            var today = DateTime.UtcNow.Date;
+            var today = ChinaTime.Today;
             var count = await _db.PointLedgers.CountAsync(p =>
                 p.UserId == user.Id &&
                 p.Reason == reason &&

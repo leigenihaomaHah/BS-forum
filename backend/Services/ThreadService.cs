@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
 using ForumApi.Models;
@@ -166,12 +166,18 @@ public class ThreadService
         }
         var canEdit = currentUserId.HasValue && (thread.AuthorId == currentUserId.Value || canModerate);
 
+        var tipCoins = await _db.CoinLedgers
+            .Where(c => c.Reason == "receive_tip" && c.RefType == "thread" && c.RefId == threadId && c.Delta > 0)
+            .SumAsync(c => (int?)c.Delta) ?? 0;
+        var tipCount = await _db.CoinLedgers
+            .CountAsync(c => c.Reason == "receive_tip" && c.RefType == "thread" && c.RefId == threadId && c.Delta > 0);
+
         return (new ThreadDetailDto(
             thread.Id, thread.ForumId, thread.Forum.Name, thread.Title, type, thread.CoinPrice,
             thread.Views, thread.ReplyCount, thread.LikeCount, thread.CreatedAt,
             liked, favorited, Restricted: !canAccess, Purchased: purchased || thread.AuthorId == currentUserId,
             thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, [], poll,
-            canModerate, canEdit), null);
+            canModerate, canEdit, tipCoins, tipCount), null);
     }
 
     public async Task<PagedResult<PostDto>> GetPostsAsync(int threadId, int? currentUserId, int page, int pageSize)
@@ -206,35 +212,48 @@ public class ThreadService
         var hideContent = !canAccess && type == TypeCoin && !purchased;
         var byId = items.ToDictionary(p => p.Id);
         var authorIds = items.Select(p => p.AuthorId).Distinct().ToList();
-        var postCounts = await _db.Posts
-            .Where(p => authorIds.Contains(p.AuthorId) && !p.IsDeleted)
-            .GroupBy(p => p.AuthorId)
+        var postCounts = await _db.Threads
+            .Where(t => authorIds.Contains(t.AuthorId) && !t.IsHidden)
+            .GroupBy(t => t.AuthorId)
+            .Select(g => new { AuthorId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AuthorId, x => x.Count);
+        var essenceCounts = await _db.Threads
+            .Where(t => authorIds.Contains(t.AuthorId) && !t.IsHidden && t.IsEssence)
+            .GroupBy(t => t.AuthorId)
             .Select(g => new { AuthorId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.AuthorId, x => x.Count);
 
         var list = new List<PostDto>();
         foreach (var p in items)
-            list.Add(await MapPostDtoAsync(p, hideContent, byId, postCounts));
+            list.Add(await MapPostDtoAsync(p, hideContent, byId, postCounts, essenceCounts));
 
         return new PagedResult<PostDto>(list, total, page, pageSize);
     }
 
-    private async Task<AuthorBriefDto> MapAuthorAsync(User u, int? postCount = null)
+    private async Task<AuthorBriefDto> MapAuthorAsync(User u, int? postCount = null, int? essenceCount = null)
     {
         var ln = await _levels.GetLevelNameAsync(u.Level);
-        var count = postCount ?? await _db.Posts.CountAsync(p => p.AuthorId == u.Id && !p.IsDeleted);
+        // 侧栏「帖子」= 主题数（与后台发帖统计一致），不含回帖
+        var count = postCount ?? await _db.Threads.CountAsync(t => t.AuthorId == u.Id && !t.IsHidden);
+        var essence = essenceCount ?? await _db.Threads.CountAsync(t => t.AuthorId == u.Id && !t.IsHidden && t.IsEssence);
         return new AuthorBriefDto(
             u.Id, u.Nickname, u.Level, ln, u.Points, u.IsEffectivelyVip(), u.AvatarFrame,
-            u.Avatar, count, u.CreatedAt);
+            u.Avatar, count, u.CreatedAt, essence);
     }
 
     private async Task<PostDto> MapPostDtoAsync(
-        Post p, bool hideContent, Dictionary<int, Post>? byId = null, Dictionary<int, int>? postCounts = null)
+        Post p, bool hideContent, Dictionary<int, Post>? byId = null,
+        Dictionary<int, int>? postCounts = null, Dictionary<int, int>? essenceCounts = null)
     {
         int? pc = null;
         if (postCounts != null && postCounts.TryGetValue(p.AuthorId, out var c))
             pc = c;
-        var author = await MapAuthorAsync(p.Author, pc);
+        int? ec = null;
+        if (essenceCounts != null && essenceCounts.TryGetValue(p.AuthorId, out var e))
+            ec = e;
+        else if (essenceCounts != null)
+            ec = 0;
+        var author = await MapAuthorAsync(p.Author, pc, ec);
         int? rf = null;
         string? rn = null;
         string? rc = null;
@@ -311,7 +330,7 @@ public class ThreadService
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            var now = DateTime.UtcNow;
+            var now = ChinaTime.Now;
             var thread = new ForumThread
             {
                 ForumId = forum.Id,
@@ -398,7 +417,7 @@ public class ThreadService
         var maxReplies = await _settings.GetIntAsync("max_replies_per_day", 50);
         if (!user.IsAdmin && maxReplies > 0)
         {
-            var todayStart = DateTime.UtcNow.Date;
+            var todayStart = ChinaTime.Today;
             var todayReplies = await _db.Posts.CountAsync(p =>
                 p.AuthorId == userId && p.Floor > 1 && p.CreatedAt >= todayStart && !p.IsDeleted);
             if (todayReplies >= maxReplies)
@@ -407,17 +426,24 @@ public class ThreadService
 
         if (!user.IsAdmin)
         {
+            // 仅统计本人最近一次发帖/回帖；时间戳异常（未来时间、未标注 UTC）时不得算出数千秒等待
             var lastAt = await _db.Posts
-                .Where(p => p.AuthorId == userId)
+                .Where(p => p.AuthorId == userId && !p.IsDeleted)
                 .OrderByDescending(p => p.CreatedAt)
                 .Select(p => (DateTime?)p.CreatedAt)
                 .FirstOrDefaultAsync();
             if (lastAt.HasValue)
             {
-                var elapsed = (DateTime.UtcNow - lastAt.Value).TotalSeconds;
+                var last = ChinaTime.SpecifyAsChina(lastAt.Value);
+                var elapsed = (ChinaTime.Now - last).TotalSeconds;
+                if (elapsed < 0 || double.IsNaN(elapsed) || double.IsInfinity(elapsed))
+                    elapsed = ReplyCooldownSeconds; // 脏数据 / 时钟偏差：放行
                 var wait = (int)Math.Ceiling(ReplyCooldownSeconds - elapsed);
                 if (wait > 0)
+                {
+                    wait = Math.Min(wait, ReplyCooldownSeconds);
                     return (null, $"回帖太快了，请 {wait} 秒后再试");
+                }
             }
         }
 
@@ -440,16 +466,16 @@ public class ThreadService
                 ImagesJson = PostImageHelper.Serialize(images),
                 Floor = floor,
                 ReplyToPostId = quote?.Id,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = ChinaTime.Now
             };
             _db.Posts.Add(post);
             thread.ReplyCount += 1;
-            thread.LastReplyAt = DateTime.UtcNow;
+            thread.LastReplyAt = ChinaTime.Now;
             thread.Forum.PostCount += 1;
 
             // 阶梯奖励：当日回帖次数越多，单次收益递减；基数来自站点设置
             var todayReplyCount = await _db.PointLedgers
-                .CountAsync(p => p.UserId == user.Id && p.Reason == RewardService.ReasonReply && p.CreatedAt >= DateTime.UtcNow.Date);
+                .CountAsync(p => p.UserId == user.Id && p.Reason == RewardService.ReasonReply && p.CreatedAt >= ChinaTime.Today);
 
             var basePts = await _settings.GetIntAsync("points_per_reply", 2);
             var baseCns = await _settings.GetIntAsync("coins_per_reply", 1);
@@ -543,7 +569,7 @@ public class ThreadService
         post.Content = content.Length >= 1 ? content : "[图片]";
         if (req.Images != null)
             post.ImagesJson = PostImageHelper.Serialize(images);
-        post.EditedAt = DateTime.UtcNow;
+        post.EditedAt = ChinaTime.Now;
         await _db.SaveChangesAsync();
 
         return (await MapPostDtoAsync(post, false), null);
@@ -598,7 +624,7 @@ public class ThreadService
         if (post.IsDeleted) return ("已删除", null);
 
         post.IsDeleted = true;
-        post.DeletedAt = DateTime.UtcNow;
+        post.DeletedAt = ChinaTime.Now;
         post.Content = "";
         post.ImagesJson = null;
         post.Thread.ReplyCount = Math.Max(0, post.Thread.ReplyCount - 1);
@@ -681,7 +707,7 @@ public class ThreadService
                 ThreadId = thread.Id,
                 UserId = user.Id,
                 CoinPrice = thread.CoinPrice,
-                PurchasedAt = DateTime.UtcNow
+                PurchasedAt = ChinaTime.Now
             });
 
             await _db.SaveChangesAsync();
@@ -739,7 +765,7 @@ public class ThreadService
         {
             ThreadId = threadId,
             UserId = userId,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         await _db.SaveChangesAsync();
         return (new FavoriteResultDto(true, "已收藏"), null);
@@ -896,7 +922,6 @@ public class ThreadService
         var thread = await _db.Threads.Include(t => t.Author).FirstOrDefaultAsync(t => t.Id == threadId);
         if (thread == null) return (null, "帖子不存在");
         if (thread.IsHidden) return (null, "帖子不存在");
-        if (thread.RepliesLocked) return (null, "本帖已禁止回复");
         if (thread.AuthorId == userId) return (null, "不能打赏自己的帖子");
 
         var accessError = await EnsureCanInteractAsync(thread, userId);

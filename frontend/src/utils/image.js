@@ -22,3 +22,23 @@ export function compressImage(file, maxDim, quality) {
     reader.readAsDataURL(file)
   })
 }
+
+/** 从剪贴板事件取出图片文件（Ctrl+V / 右键粘贴） */
+export function filesFromClipboard(clipboardData) {
+  if (!clipboardData) return []
+  const out = []
+  const seen = new Set()
+  const push = (f) => {
+    if (!f || !f.type?.startsWith('image/') || seen.has(f)) return
+    seen.add(f)
+    out.push(f)
+  }
+  for (const f of clipboardData.files || []) push(f)
+  if (out.length) return out
+  for (const item of clipboardData.items || []) {
+    if (item.kind === 'file' && item.type?.startsWith('image/')) {
+      push(item.getAsFile())
+    }
+  }
+  return out
+}

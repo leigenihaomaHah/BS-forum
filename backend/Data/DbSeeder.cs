@@ -1,4 +1,4 @@
-using ForumApi.Models;
+﻿using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace ForumApi.Data;
@@ -109,7 +109,7 @@ public static class DbSeeder
         db.Forums.AddRange(forums);
         await db.SaveChangesAsync();
 
-        var now = DateTime.UtcNow;
+        var now = ChinaTime.Now;
         var seedThreads = new[]
         {
             (forums[0].Id, admin.Id, "欢迎来到 BS 综合社区！", "这里是综合交流区，请遵守论坛规则，友善交流。欢迎发帖回帖赚积分升级！", 120, 8, 15),

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using ForumApi.Data;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -106,7 +106,7 @@ public class ImageMigrationService
             if (ext == ".jpeg") ext = ".jpg";
             if (!_allowed.Contains(ext)) ext = ".jpg";
 
-            var name = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}{ext}";
+            var name = $"{ChinaTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}{ext}";
             var path = Path.Combine(basePath, name);
 
             var bytes = Convert.FromBase64String(b64);

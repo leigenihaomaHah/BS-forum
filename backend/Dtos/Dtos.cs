@@ -160,7 +160,9 @@ public record ThreadDetailDto(
     List<PostDto> Posts,
     PollDto? Poll = null,
     bool CanModerate = false,
-    bool CanEdit = false);
+    bool CanEdit = false,
+    int TipCoins = 0,
+    int TipCount = 0);
 
 public record AuthorBriefDto(
     int Id,
@@ -172,7 +174,8 @@ public record AuthorBriefDto(
     string? AvatarFrame = null,
     string? Avatar = null,
     int PostCount = 0,
-    DateTime? CreatedAt = null);
+    DateTime? CreatedAt = null,
+    int EssenceCount = 0);
 
 public record PostDto(
     int Id,
@@ -577,7 +580,24 @@ public record LotteryRecentItemDto(
 
 public record InviteInfoDto(string InviteCode, string InviteUrlPath, int InviteCount, int RewardCoins, int RewardPoints);
 public record FollowResultDto(bool Following, string Message);
-public record FeedItemDto(int ThreadId, string Title, string ForumName, string AuthorNickname, int AuthorId, DateTime CreatedAt, string Kind);
+public record FeedItemDto(
+    int ThreadId,
+    string Title,
+    string ForumName,
+    string AuthorNickname,
+    int AuthorId,
+    DateTime CreatedAt,
+    string Kind,
+    string? AuthorAvatar = null,
+    int AuthorLevel = 1,
+    bool AuthorIsVip = false,
+    string? AuthorAvatarFrame = null,
+    int ReplyCount = 0,
+    int Views = 0,
+    int LikeCount = 0,
+    bool IsEssence = false,
+    bool IsPinned = false,
+    string Type = "normal");
 public record TagThreadItemDto(
     int Id, string Title, int ForumId, string ForumName, int Views, int ReplyCount,
     DateTime CreatedAt, DateTime LastReplyAt, string AuthorNickname, int AuthorLevel,

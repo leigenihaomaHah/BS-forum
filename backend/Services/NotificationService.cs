@@ -1,4 +1,4 @@
-using ForumApi.Data;
+﻿using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +28,7 @@ public class NotificationService
             Content = $"回复了你：{snippet}",
             PostId = postId,
             Floor = floor,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }
@@ -49,7 +49,7 @@ public class NotificationService
             Content = "在回复中提到了你",
             PostId = postId,
             Floor = floor,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }
@@ -66,7 +66,7 @@ public class NotificationService
             FromUserId = fromUserId,
             FromNickname = fromNickname,
             Content = $"打赏了 {amount} 金币",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }
@@ -83,7 +83,7 @@ public class NotificationService
             FromUserId = followerId,
             FromNickname = followerNickname,
             Content = "关注了你",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }
@@ -99,7 +99,7 @@ public class NotificationService
             FromUserId = 0,
             FromNickname = "系统",
             Content = content,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = ChinaTime.Now
         });
         return Task.CompletedTask;
     }

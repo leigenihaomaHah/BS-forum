@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class Notification
 {
@@ -11,7 +11,7 @@ public class Notification
     public string FromNickname { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public bool Read { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public int PostId { get; set; }
     public int Floor { get; set; }
 

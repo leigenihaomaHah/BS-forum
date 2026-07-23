@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class CoinLedger
 {
@@ -8,7 +8,7 @@ public class CoinLedger
     public string Reason { get; set; } = string.Empty;
     public string? RefType { get; set; }
     public int? RefId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 
     public User User { get; set; } = null!;
 }

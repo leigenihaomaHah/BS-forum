@@ -1,4 +1,4 @@
-namespace ForumApi.Models;
+﻿namespace ForumApi.Models;
 
 public class Post
 {
@@ -10,7 +10,7 @@ public class Post
     public string? ImagesJson { get; set; }
     public int Floor { get; set; }
     public int? ReplyToPostId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public DateTime? EditedAt { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }

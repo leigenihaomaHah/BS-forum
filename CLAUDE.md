@@ -60,6 +60,8 @@ backend/
 
 **关键 API 路由**: `api/auth`（注册/登录）、`api/me`（资料/设置/签到/通知）、`api/threads`（CRUD/回复/点赞/购买/收藏/打赏）、`api/forums`（分类/帖子列表）、`api/admin`（用户/帖子/版块/横幅/管理操作）、`api/community`（关注/动态/标签/商城/抽奖/举报）、`api/recharge`（VIP 套餐/订单/充值卡）
 
+**时间**: 全站业务时间统一为**北京时间**（`ChinaTime` / Asia/Shanghai）。JWT 过期仍用 UTC（协议惯例）。前端展示见 `frontend/src/utils/time.js`。
+
 **数据库**: SQLite。生产库通过 `BS_DATA_DIR` 放在站点外（默认 `data/forum.db`），**发布包不含 db**。表/字段升级用独立工具 `tools/DbSchemaMigrate`（清单 `schema-ensure.json`），部署前先刷库；站点启动不再自动 ALTER。详见 [docs/db-migrate.md](docs/db-migrate.md)。
 
 **认证**: JWT Bearer，`RoleClaimType = ClaimTypes.Role`，管理员角色 = "Admin"。`JwtHelper.GetUserId(User)` 从 claims 中提取当前用户 ID（匿名请求返回 null）。

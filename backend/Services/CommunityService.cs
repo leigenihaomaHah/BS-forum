@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using ForumApi.Data;
 using ForumApi.Dtos;
 using ForumApi.Helpers;
@@ -117,12 +117,52 @@ public class CommunityService
             .Where(t => followeeIds.Contains(t.AuthorId) && !t.IsHidden && !t.PendingReview && !blocked.Contains(t.AuthorId));
 
         var total = await query.CountAsync();
-        var items = await query
+        var now = ChinaTime.Now;
+        var rows = await query
             .OrderByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(t => new FeedItemDto(t.Id, t.Title, t.Forum.Name, t.Author.Nickname, t.AuthorId, t.CreatedAt, "thread"))
+            .Select(t => new
+            {
+                t.Id,
+                t.Title,
+                ForumName = t.Forum.Name,
+                t.Author.Nickname,
+                t.AuthorId,
+                t.CreatedAt,
+                t.Author.Avatar,
+                t.Author.Level,
+                t.Author.IsVip,
+                t.Author.VipUntil,
+                t.Author.AvatarFrame,
+                t.ReplyCount,
+                t.Views,
+                t.LikeCount,
+                t.IsEssence,
+                t.IsPinned,
+                t.Type,
+            })
             .ToListAsync();
+
+        var items = rows.Select(t => new FeedItemDto(
+            t.Id,
+            t.Title,
+            t.ForumName,
+            t.Nickname,
+            t.AuthorId,
+            t.CreatedAt,
+            "thread",
+            t.Avatar,
+            t.Level,
+            t.IsVip && (t.VipUntil == null || t.VipUntil > now),
+            t.AvatarFrame,
+            t.ReplyCount,
+            t.Views,
+            t.LikeCount,
+            t.IsEssence,
+            t.IsPinned,
+            t.Type
+        )).ToList();
 
         return new PagedResult<FeedItemDto>(items, total, page, pageSize);
     }
@@ -303,7 +343,7 @@ public class CommunityService
 
     public async Task<List<TaskItemDto>> GetDailyTasksAsync(int userId)
     {
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var defs = new[]
         {
             ("signin", "每日签到", "完成今日签到", 1, 5, 1),
@@ -323,7 +363,7 @@ public class CommunityService
 
     public async Task BumpTaskAsync(int userId, string taskCode, int delta = 1)
     {
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var row = await _db.UserTaskProgresses.FirstOrDefaultAsync(t =>
             t.UserId == userId && t.TaskCode == taskCode && t.ProgressDate == today);
         if (row == null)
@@ -343,7 +383,7 @@ public class CommunityService
         if (task.Claimed) return (null, "已领取");
         if (task.Progress < task.Target) return (null, "尚未完成");
 
-        var today = DateTime.UtcNow.Date;
+        var today = ChinaTime.Today;
         var row = await _db.UserTaskProgresses.FirstAsync(t =>
             t.UserId == userId && t.TaskCode == taskCode && t.ProgressDate == today);
         var user = await _db.Users.FindAsync(userId);
@@ -518,7 +558,7 @@ public class CommunityService
             if (post != null && !post.IsDeleted && post.Floor > 1)
             {
                 post.IsDeleted = true;
-                post.DeletedAt = DateTime.UtcNow;
+                post.DeletedAt = ChinaTime.Now;
                 post.Content = "";
                 post.ImagesJson = null;
                 post.Thread.ReplyCount = Math.Max(0, post.Thread.ReplyCount - 1);
@@ -538,7 +578,7 @@ public class CommunityService
         report.Status = action == "reject" ? "rejected" : "resolved";
         report.HandledByAdminId = adminId;
         report.HandleNote = req.Note;
-        report.HandledAt = DateTime.UtcNow;
+        report.HandledAt = ChinaTime.Now;
         await _db.SaveChangesAsync();
         return (true, null);
     }
@@ -579,7 +619,7 @@ public class CommunityService
         if (!exists) return (false, "用户不存在");
         if (await _db.UserBlocks.AnyAsync(b => b.UserId == userId && b.BlockedUserId == blockedUserId))
             return (true, null); // already blocked, no-op
-        _db.UserBlocks.Add(new UserBlock { UserId = userId, BlockedUserId = blockedUserId, CreatedAt = DateTime.UtcNow });
+        _db.UserBlocks.Add(new UserBlock { UserId = userId, BlockedUserId = blockedUserId, CreatedAt = ChinaTime.Now });
         await _db.SaveChangesAsync();
         return (true, null);
     }
