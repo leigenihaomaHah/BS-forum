@@ -24,8 +24,12 @@ const routes = [
   { path: '/me/threads', name: 'my-threads', component: () => import('../views/MyThreadsView.vue') },
   { path: '/me/favorites', name: 'my-favorites', component: () => import('../views/MyFavoritesView.vue') },
   { path: '/feed', name: 'feed', component: () => import('../views/FeedView.vue') },
+  { path: '/leaderboard', name: 'leaderboard', component: () => import('../views/LeaderboardView.vue') },
   { path: '/tag/:name', name: 'tag', component: () => import('../views/TagView.vue') },
   { path: '/user/:id', name: 'user', component: () => import('../views/UserProfileView.vue') },
+  { path: '/user/:id/followers', name: 'user-followers', component: () => import('../views/FollowListView.vue') },
+  { path: '/user/:id/following', name: 'user-following', component: () => import('../views/FollowListView.vue') },
+  { path: '/me/reports', name: 'my-reports', component: () => import('../views/MyReportsView.vue') },
   { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
   { path: '/search', name: 'search', component: () => import('../views/SearchView.vue') },
   {
@@ -35,6 +39,8 @@ const routes = [
     children: [
       { path: '', name: 'admin-dashboard', component: () => import('../views/admin/DashboardView.vue') },
       { path: 'queue', name: 'admin-queue', component: () => import('../views/admin/QueueView.vue') },
+      { path: 'sensitive-words', name: 'admin-sensitive-words', component: () => import('../views/admin/SensitiveWordsView.vue') },
+      { path: 'silent-users', name: 'admin-silent-users', component: () => import('../views/admin/SilentUsersView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('../views/admin/UsersView.vue') },
       { path: 'forums', name: 'admin-forums', component: () => import('../views/admin/ForumsView.vue') },
       { path: 'threads', name: 'admin-threads', component: () => import('../views/admin/ThreadsView.vue') },

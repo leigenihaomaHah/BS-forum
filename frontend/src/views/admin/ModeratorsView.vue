@@ -67,7 +67,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
+import { useDialogStore } from '../../stores/dialog'
 
+const dialog = useDialogStore()
 const items = ref([])
 const forums = ref([])
 const forumId = ref(0)
@@ -126,7 +128,7 @@ async function add() {
 }
 
 async function remove(m) {
-  if (!confirm('确定移除？')) return
+  if (!(await dialog.confirm('确定移除？', { danger: true, confirmText: '移除' }))) return
   await api.delete('/admin/moderators', { params: { forumId: m.forumId, userId: m.userId } })
   await load()
 }

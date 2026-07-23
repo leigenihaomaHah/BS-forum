@@ -39,8 +39,10 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const invites = ref([])
 
 function fmt(iso) {
@@ -57,7 +59,7 @@ async function load() {
 }
 
 async function regenerate(inv) {
-  if (!confirm(`确定重新生成 ${inv.nickname} 的邀请码？旧码将失效。`)) return
+  if (!(await dialog.confirm(`确定重新生成 ${inv.nickname} 的邀请码？旧码将失效。`, { danger: true, confirmText: '重新生成' }))) return
   try {
     const { data } = await api.post(`/admin/invites/${inv.userId}/regenerate`)
     toast.success(data.message || '已重新生成')

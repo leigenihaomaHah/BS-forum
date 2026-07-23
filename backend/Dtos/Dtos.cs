@@ -19,7 +19,9 @@ public record UpdateSettingsRequest(
     bool? ShowFavorites = null,
     string? Email = null,
     bool? NotifyReply = null,
-    bool? NotifyMention = null);
+    bool? NotifyMention = null,
+    string? Signature = null,
+    string? ThemePreference = null);
 
 public record AuthResponse(
     string Token,
@@ -51,7 +53,9 @@ public record UserDto(
     bool ShowFavorites = false,
     string? Email = null,
     bool NotifyReply = true,
-    bool NotifyMention = true);
+    bool NotifyMention = true,
+    string? Signature = null,
+    string ThemePreference = "light");
 
 public record UserProfileDto(
     int Id,
@@ -72,7 +76,10 @@ public record UserProfileDto(
     List<string> Badges,
     int FollowerCount,
     int FollowingCount,
-    bool FollowedByMe);
+    bool FollowedByMe,
+    string? Signature = null,
+    bool BlockedByMe = false,
+    bool FollowsMe = false);
 
 public record LevelRuleDto(
     int Id,
@@ -175,7 +182,8 @@ public record AuthorBriefDto(
     string? Avatar = null,
     int PostCount = 0,
     DateTime? CreatedAt = null,
-    int EssenceCount = 0);
+    int EssenceCount = 0,
+    string? Signature = null);
 
 public record PostDto(
     int Id,
@@ -190,7 +198,8 @@ public record PostDto(
     string? ReplyToNickname = null,
     string? ReplyToContent = null,
     DateTime? EditedAt = null,
-    bool Deleted = false);
+    bool Deleted = false,
+    bool AuthorBlocked = false);
 
 public record CreateThreadRequest(
     int ForumId,
@@ -200,12 +209,21 @@ public record CreateThreadRequest(
     string? Type = null,
     int CoinPrice = 0,
     List<string>? Tags = null,
-    List<string>? PollOptions = null);
+    List<string>? PollOptions = null,
+    DateTime? PollEndsAt = null,
+    bool PollAllowMulti = false);
 public record CreateReplyRequest(string Content, List<string>? Images = null, int? ReplyToPostId = null);
 
-public record PollDto(List<PollOptionDto> Options, int? MyOptionId, int TotalVotes);
+public record PollDto(
+    List<PollOptionDto> Options,
+    int? MyOptionId,
+    int TotalVotes,
+    DateTime? EndsAt = null,
+    bool AllowMulti = false,
+    bool Closed = false,
+    List<int>? MyOptionIds = null);
 public record PollOptionDto(int Id, string Text, int VoteCount, int SortOrder);
-public record VotePollRequest(int OptionId);
+public record VotePollRequest(int OptionId = 0, List<int>? OptionIds = null);
 public record UpdatePostRequest(string Content, List<string>? Images = null);
 public record UpdateThreadRequest(string Title, string Content, List<string>? Images = null);
 public record ModerationActionRequest(string? Reason);
@@ -306,6 +324,40 @@ public record SearchHitDto(
     string Snippet);
 
 public record SearchResultDto(List<SearchHitDto> Items, int Total);
+
+public record LeaderboardItemDto(
+    int Rank,
+    int UserId,
+    string Nickname,
+    string? Avatar,
+    int Level,
+    string LevelName,
+    bool IsVip,
+    int Score);
+
+public record LeaderboardResultDto(string Metric, string Period, List<LeaderboardItemDto> Items);
+
+public record FollowUserItemDto(
+    int Id,
+    string Nickname,
+    string? Avatar,
+    int Level,
+    string LevelName,
+    bool IsVip,
+    bool FollowedByMe,
+    bool FollowsMe,
+    DateTime FollowedAt);
+
+public record MyReportItemDto(
+    int Id,
+    string TargetType,
+    int TargetId,
+    string Reason,
+    string Status,
+    DateTime CreatedAt,
+    string? HandleNote,
+    DateTime? HandledAt,
+    string? TargetTitle);
 
 public record SearchQuery(
     string? Q = null,
@@ -717,5 +769,14 @@ public record LedgerEntryDto(int Id, int UserId, string Nickname, int Delta, str
 public record AdminInviteDto(int UserId, string Nickname, string Code, DateTime CreatedAt, int UsedCount);
 public record BroadcastNotificationRequest(string Content, int? UserId = null);
 public record AdminUpdateSettingsRequest(Dictionary<string, string> Settings);
+public record SensitiveWordDto(int Id, string Word, string Category, bool Enabled, DateTime CreatedAt);
+public record SaveSensitiveWordRequest(string Word, string Category = "sensitive", bool Enabled = true);
+public record BatchIdsRequest(List<int> Ids, string? Reason = null);
+public record BatchResultDto(int Success, int Failed, string Message);
+public record PaidPinResultDto(string Message, int CoinsLeft, DateTime PinnedUntil);
+public record SilentUserDto(
+    int Id, string Username, string Nickname, int Level, string LevelName,
+    int Points, int Coins, DateTime LastActiveAt, int SilentDays, DateTime CreatedAt);
+public record RecallUsersRequest(List<int> Ids, string Content);
 
 public record UploadResultDto(List<string> Urls);

@@ -43,8 +43,10 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const tags = ref([])
 const editingId = ref(null)
 const editName = ref('')
@@ -75,7 +77,7 @@ async function saveRename(t) {
 }
 
 async function delTag(t) {
-  if (!confirm(`确定删除标签 "#${t.name}"？`)) return
+  if (!(await dialog.confirm(`确定删除标签 "#${t.name}"？`, { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/tags/${t.id}`)
     toast.success('已删除')

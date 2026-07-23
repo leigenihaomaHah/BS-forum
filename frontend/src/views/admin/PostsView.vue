@@ -47,9 +47,11 @@
 import { ref, computed } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const items = ref([])
 const page = ref(1)
 const total = ref(0)
@@ -75,7 +77,7 @@ async function load(p) {
 }
 
 async function delPost(p) {
-  if (!confirm(`确定删除 #${p.id} 回复？`)) return
+  if (!(await dialog.confirm(`确定删除 #${p.id} 回复？`, { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/posts/${p.id}`)
     toast.success('已删除')

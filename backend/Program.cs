@@ -101,6 +101,8 @@ builder.Services.AddScoped<SearchService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<LotteryService>();
 builder.Services.AddScoped<CommunityService>();
+builder.Services.AddScoped<ContentFilterService>();
+builder.Services.AddScoped<LeaderboardService>();
 builder.Services.AddScoped<RetentionService>();
 builder.Services.AddScoped<RechargeService>();
 builder.Services.AddScoped<ImageMigrationService>();
@@ -129,6 +131,8 @@ using (var scope = app.Services.CreateScope())
         await DbSeeder.SeedAsync(db, bulkDemo);
         var settings = scope.ServiceProvider.GetRequiredService<SiteSettingsService>();
         await settings.EnsureDefaultsAsync();
+        var filter = scope.ServiceProvider.GetRequiredService<ContentFilterService>();
+        await filter.SeedDefaultsIfEmptyAsync();
         logger.LogInformation("SQLite ready at {DbPath}（结构请用 DbSchemaMigrate.exe 维护）", dbFilePath);
     }
     catch (Exception ex)

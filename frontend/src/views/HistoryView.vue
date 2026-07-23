@@ -27,8 +27,10 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '../components/AppLayout.vue'
 import api from '../api/http'
+import { useDialogStore } from '../stores/dialog'
 import { timeAgo } from '../utils/time.js'
 
+const dialog = useDialogStore()
 const items = ref([])
 const loading = ref(false)
 
@@ -41,7 +43,7 @@ async function load() {
 }
 
 async function clear() {
-  if (!confirm('确定清空浏览历史？')) return
+  if (!(await dialog.confirm('确定清空浏览历史？', { danger: true, confirmText: '清空' }))) return
   await api.delete('/me/history')
   items.value = []
 }

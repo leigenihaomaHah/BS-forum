@@ -62,12 +62,14 @@ public class MeController : ControllerBase
     private readonly AuthService _auth;
     private readonly ThreadService _threads;
     private readonly NotificationService _notifications;
+    private readonly CommunityService _community;
 
-    public MeController(AuthService auth, ThreadService threads, NotificationService notifications)
+    public MeController(AuthService auth, ThreadService threads, NotificationService notifications, CommunityService community)
     {
         _auth = auth;
         _threads = threads;
         _notifications = notifications;
+        _community = community;
     }
 
     [HttpGet]
@@ -76,7 +78,18 @@ public class MeController : ControllerBase
         var uid = JwtHelper.GetUserId(User);
         if (uid == null) return Unauthorized();
         var me = await _auth.GetMeAsync(uid.Value);
+        if (me != null)
+            await _community.TryAwardProgressBadgesAsync(uid.Value);
         return me == null ? NotFound() : Ok(me);
+    }
+
+    [HttpGet("reports")]
+    public async Task<ActionResult<PagedResult<MyReportItemDto>>> MyReports(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        return Ok(await _community.GetMyReportsAsync(uid.Value, page, pageSize));
     }
 
     [HttpPut("settings")]

@@ -17,7 +17,8 @@ public class SearchService
 
     public async Task<SearchResultDto> SearchAsync(
         string? q, int page, int pageSize,
-        int? forumId = null, string? type = null, int? viewerId = null)
+        int? forumId = null, string? type = null, int? viewerId = null,
+        DateTime? from = null, DateTime? to = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
@@ -39,6 +40,14 @@ public class SearchService
 
         if (forumId.HasValue)
             query = query.Where(t => t.ForumId == forumId.Value);
+
+        if (from.HasValue)
+            query = query.Where(t => t.CreatedAt >= from.Value);
+        if (to.HasValue)
+        {
+            var end = to.Value.Date.AddDays(1);
+            query = query.Where(t => t.CreatedAt < end);
+        }
 
         if (!string.IsNullOrEmpty(typeFilter))
             query = query.Where(t => t.Type == typeFilter);

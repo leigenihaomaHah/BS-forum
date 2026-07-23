@@ -113,9 +113,28 @@ let mentionTimer = null
 
 function onPaste(e) {
   const files = filesFromClipboard(e.clipboardData)
-  if (!files.length) return
-  e.preventDefault()
-  emit('paste-images', files)
+  if (files.length) {
+    e.preventDefault()
+    emit('paste-images', files)
+    return
+  }
+  const html = e.clipboardData?.getData('text/html')
+  const plain = e.clipboardData?.getData('text/plain')
+  if (html && plain && !/<img[\s>]/i.test(html)) {
+    e.preventDefault()
+    const el = ta.value
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const val = props.modelValue
+    const newVal = val.substring(0, start) + plain + val.substring(end)
+    emit('update:modelValue', newVal)
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + plain.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
 }
 
 function focus() {

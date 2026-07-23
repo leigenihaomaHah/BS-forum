@@ -53,9 +53,11 @@ import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useAuthStore } from '../../stores/auth'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import { isAdminUser } from '../../config/levels.js'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 
 const auth = useAuthStore()
 const currentUserId = auth.user?.id
@@ -74,7 +76,8 @@ async function load() {
 
 async function setRole(id, role) {
   const action = role === 'admin' ? '提升为管理员' : '降级为普通用户'
-  if (!confirm(`确定将用户 #${id} ${action}？`)) return
+  const opts = role === 'admin' ? {} : { danger: true, confirmText: '降级' }
+  if (!(await dialog.confirm(`确定将用户 #${id} ${action}？`, opts))) return
   try {
     await api.put(`/admin/users/${id}/role`, { role })
     await load()

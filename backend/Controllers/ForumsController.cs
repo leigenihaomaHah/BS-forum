@@ -63,7 +63,7 @@ public class HotController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<List<HotThreadDto>>> Get([FromQuery] string period = "day")
-        => Ok(await _hot.GetHotAsync(period));
+        => Ok(await _hot.GetHotAsync(period, JwtHelper.GetUserId(User)));
 }
 
 [ApiController]
@@ -76,7 +76,7 @@ public class EssenceController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<List<EssenceThreadDto>>> Get([FromQuery] int take = 10)
-        => Ok(await _hot.GetEssenceAsync(take));
+        => Ok(await _hot.GetEssenceAsync(take, JwtHelper.GetUserId(User)));
 }
 
 [ApiController]

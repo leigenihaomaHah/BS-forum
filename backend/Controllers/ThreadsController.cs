@@ -114,6 +114,17 @@ public class ThreadsController : ControllerBase
     }
 
     [Authorize]
+    [HttpPost("{id:int}/paid-pin")]
+    public async Task<ActionResult<PaidPinResultDto>> PaidPin(int id)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        var (result, error) = await _threads.PaidPinAsync(uid.Value, id);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [Authorize]
     [HttpPost("{id:int}/like")]
     public async Task<ActionResult<ApiMessage>> Like(int id)
     {
@@ -130,7 +141,7 @@ public class ThreadsController : ControllerBase
     {
         var uid = JwtHelper.GetUserId(User);
         if (uid == null) return Unauthorized();
-        var (result, error) = await community.VotePollAsync(uid.Value, id, req.OptionId);
+        var (result, error) = await community.VotePollAsync(uid.Value, id, req);
         if (error != null) return BadRequest(new ApiMessage(error));
         return Ok(result);
     }

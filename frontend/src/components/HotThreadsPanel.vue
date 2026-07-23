@@ -56,7 +56,7 @@ async function load(p = period.value) {
   loading.value = true
   try {
     const { data } = await api.get('/hot', { params: { period: p } })
-    items.value = data
+    items.value = Array.isArray(data) ? data.slice(0, 10) : []
   } catch {
     items.value = []
   } finally {

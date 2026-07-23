@@ -101,6 +101,10 @@
     {
       "name": "PrivateMessages",
       "sql": "CREATE TABLE IF NOT EXISTS \"PrivateMessages\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"SenderId\" INTEGER NOT NULL, \"ReceiverId\" INTEGER NOT NULL, \"Content\" TEXT NOT NULL, \"IsRead\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL);"
+    },
+    {
+      "name": "SensitiveWords",
+      "sql": "CREATE TABLE IF NOT EXISTS \"SensitiveWords\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"Word\" TEXT NOT NULL, \"Category\" TEXT NOT NULL DEFAULT 'sensitive', \"Enabled\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);"
     }
   ],
   "columns": [
@@ -131,6 +135,13 @@
     { "table": "Users", "name": "Email", "sqlType": "TEXT NULL" },
     { "table": "Users", "name": "NotifyReply", "sqlType": "INTEGER NOT NULL DEFAULT 1" },
     { "table": "Users", "name": "NotifyMention", "sqlType": "INTEGER NOT NULL DEFAULT 1" },
+    { "table": "Users", "name": "Signature", "sqlType": "TEXT NULL" },
+    { "table": "Users", "name": "ThemePreference", "sqlType": "TEXT NOT NULL DEFAULT 'light'" },
+    { "table": "Threads", "name": "PollEndsAt", "sqlType": "TEXT NULL" },
+    { "table": "Threads", "name": "PollAllowMulti", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
+    { "table": "Threads", "name": "PinnedUntil", "sqlType": "TEXT NULL" },
+
+    { "table": "Users", "name": "LastActiveAt", "sqlType": "TEXT NULL" },
 
     { "table": "LotterySpins", "name": "PrizePoints", "sqlType": "INTEGER NOT NULL DEFAULT 0" },
     { "table": "Notifications", "name": "PostId", "sqlType": "INTEGER NOT NULL DEFAULT 0" },

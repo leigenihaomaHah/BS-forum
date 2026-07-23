@@ -156,10 +156,12 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '../../api/http'
 import { useAuthStore } from '../../stores/auth'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import { defaultAvatar } from '../../utils/avatar.js'
 import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const auth = useAuthStore()
 const router = useRouter()
 
@@ -270,7 +272,7 @@ async function confirmMute() {
 }
 
 async function unmuteUser(u) {
-  if (!confirm(`确定解除 ${u.nickname} 的禁言？`)) return
+  if (!(await dialog.confirm(`确定解除 ${u.nickname} 的禁言？`))) return
   try {
     await api.post(`/admin/users/${u.id}/unmute`, {})
     await load(page.value)
@@ -278,7 +280,7 @@ async function unmuteUser(u) {
 }
 
 async function delUser(id) {
-  if (!confirm('确定删除此用户？')) return
+  if (!(await dialog.confirm('确定删除此用户？', { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/users/${id}`)
     await load(page.value)
@@ -286,7 +288,7 @@ async function delUser(id) {
 }
 
 async function loginAs(u) {
-  if (!confirm(`确定以「${u.nickname}」身份登录？\n当前管理员会话将被替换，需要重新登录后台。`)) return
+  if (!(await dialog.confirm(`确定以「${u.nickname}」身份登录？\n当前管理员会话将被替换，需要重新登录后台。`))) return
   loggingAs.value = u.id
   try {
     const { data } = await api.post(`/admin/users/${u.id}/login-as`)

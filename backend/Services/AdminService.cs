@@ -418,6 +418,30 @@ public class AdminService
         return (true, null);
     }
 
+    public async Task<BatchResultDto> BatchApproveThreadReviewAsync(int adminId, List<int> ids)
+    {
+        var ok = 0;
+        var fail = 0;
+        foreach (var id in ids.Distinct().Take(50))
+        {
+            var (success, _) = await ApproveThreadReviewAsync(adminId, id);
+            if (success) ok++; else fail++;
+        }
+        return new BatchResultDto(ok, fail, $"已通过 {ok} 条" + (fail > 0 ? $"，失败 {fail} 条" : ""));
+    }
+
+    public async Task<BatchResultDto> BatchRejectThreadReviewAsync(int adminId, List<int> ids, string? reason)
+    {
+        var ok = 0;
+        var fail = 0;
+        foreach (var id in ids.Distinct().Take(50))
+        {
+            var (success, _) = await RejectThreadReviewAsync(adminId, id, reason);
+            if (success) ok++; else fail++;
+        }
+        return new BatchResultDto(ok, fail, $"已驳回 {ok} 条" + (fail > 0 ? $"，失败 {fail} 条" : ""));
+    }
+
     public async Task<(bool Ok, string? Error)> MoveThreadAsync(int adminId, int threadId, int forumId)
     {
         var thread = await _db.Threads.Include(t => t.Forum).FirstOrDefaultAsync(t => t.Id == threadId);
@@ -621,6 +645,7 @@ public class AdminService
         var thread = await _db.Threads.FindAsync(threadId);
         if (thread == null) return (false, "帖子不存在");
         thread.IsPinned = pinned;
+        thread.PinnedUntil = null; // 管理置顶为永久；取消时一并清空
         await LogAsync(adminId, "thread", threadId, pinned ? "pin" : "unpin", reason);
         await _db.SaveChangesAsync();
         return (true, null);
@@ -932,6 +957,67 @@ public class AdminService
         }
         await _db.SaveChangesAsync();
         return (true, null);
+    }
+
+    // ── Silent users / recall ───────────────────────────
+
+    public async Task<PagedResult<SilentUserDto>> GetSilentUsersAsync(int days, int page, int pageSize)
+    {
+        days = Math.Clamp(days, 3, 365);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var cutoff = ChinaTime.Now.AddDays(-days);
+
+        // LastActiveAt ?? LastSignInDate ?? CreatedAt < cutoff
+        var query = _db.Users.Where(u => !u.IsAdmin).Where(u =>
+            (u.LastActiveAt ?? u.LastSignInDate ?? u.CreatedAt) < cutoff);
+
+        var total = await query.CountAsync();
+        var users = await query
+            .OrderBy(u => u.LastActiveAt ?? u.LastSignInDate ?? u.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var items = new List<SilentUserDto>();
+        foreach (var u in users)
+        {
+            var last = u.LastActiveAt ?? u.LastSignInDate ?? u.CreatedAt;
+            var silentDays = Math.Max(0, (int)(ChinaTime.Now - last).TotalDays);
+            var ln = await _levels.GetLevelNameAsync(u.Level);
+            items.Add(new SilentUserDto(
+                u.Id, u.Username, u.Nickname, u.Level, ln, u.Points, u.Coins,
+                last, silentDays, u.CreatedAt));
+        }
+        return new PagedResult<SilentUserDto>(items, total, page, pageSize);
+    }
+
+    public async Task<(BatchResultDto? Result, string? Error)> RecallUsersAsync(List<int> ids, string content)
+    {
+        if (ids == null || ids.Count == 0) return (null, "请选择用户");
+        if (string.IsNullOrWhiteSpace(content) || content.Length > 500)
+            return (null, "召回内容不能为空且不超过 500 字");
+
+        var unique = ids.Distinct().Take(200).ToList();
+        var users = await _db.Users.Where(u => unique.Contains(u.Id) && !u.IsAdmin).Select(u => u.Id).ToListAsync();
+        var ok = 0;
+        foreach (var uid in users)
+        {
+            _db.Notifications.Add(new Notification
+            {
+                UserId = uid,
+                Type = "system",
+                ThreadId = 0,
+                ThreadTitle = "召回通知",
+                FromUserId = 0,
+                FromNickname = "系统",
+                Content = content.Trim(),
+                CreatedAt = ChinaTime.Now
+            });
+            ok++;
+        }
+        await _db.SaveChangesAsync();
+        return (new BatchResultDto(ok, unique.Count - ok, $"已发送召回通知 {ok} 人"), null);
     }
 
     // ── Points/Coins Ledger ──────────────────────────────

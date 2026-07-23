@@ -64,6 +64,14 @@
             >
               打赏楼主
             </button>
+            <button
+              v-if="canPaidPin"
+              class="btn-outline-modern tip-btn"
+              :disabled="payingPin"
+              @click="paidPin"
+            >
+              {{ payingPin ? '置顶中…' : (thread.isPinned ? '续期置顶' : '金币置顶') }}
+            </button>
             <button class="btn-outline-modern" :disabled="thread.likedByMe || thread.repliesLocked" @click="like">
               {{ thread.likedByMe ? '已赞' : '点赞' }}
             </button>
@@ -125,37 +133,75 @@
           <div class="poll-title">投票</div>
           <div class="poll-meta">
             <span>共 {{ thread.poll.totalVotes }} 票</span>
-            <span v-if="thread.poll.myOptionId">· 你已投票</span>
+            <span v-if="thread.poll.allowMulti">· 可多选</span>
+            <span v-if="thread.poll.endsAt">· 截止 {{ formatTime(thread.poll.endsAt) }}</span>
+            <span v-if="thread.poll.closed">· 已结束</span>
+            <span v-else-if="hasVoted">· 你已投票</span>
             <span v-else-if="!auth.isLoggedIn">· 登录后可投票</span>
+            <span v-else-if="thread.poll.allowMulti">· 勾选后提交</span>
             <span v-else>· 点击选项投票</span>
           </div>
         </div>
         <div class="poll-options">
-          <button
-            v-for="opt in thread.poll.options"
-            :key="opt.id"
-            type="button"
-            class="poll-option"
-            :class="{
-              voted: thread.poll.myOptionId === opt.id,
-              leading: isLeading(opt),
-              disabled: !!thread.poll.myOptionId || !auth.isLoggedIn || voting,
-            }"
-            :disabled="!!thread.poll.myOptionId || !auth.isLoggedIn || voting"
-            @click="vote(opt.id)"
-          >
-            <div class="poll-fill" :style="{ width: (thread.poll.myOptionId || thread.poll.totalVotes > 0 ? pollPct(opt) : 0) + '%' }"></div>
-            <div class="poll-row">
-              <span class="poll-text">
-                <span v-if="thread.poll.myOptionId === opt.id" class="poll-check">✓</span>
-                {{ opt.text }}
-              </span>
-              <span class="poll-stats">
-                <span class="poll-count">{{ opt.voteCount }}</span>
-                <span class="poll-pct">{{ pollPct(opt) }}%</span>
-              </span>
-            </div>
-          </button>
+          <template v-if="thread.poll.allowMulti && !hasVoted && auth.isLoggedIn && !thread.poll.closed">
+            <label
+              v-for="opt in thread.poll.options"
+              :key="opt.id"
+              class="poll-option"
+              :class="{ leading: isLeading(opt) }"
+            >
+              <input
+                type="checkbox"
+                class="poll-check-input"
+                :value="opt.id"
+                v-model="selectedPollOptions"
+              />
+              <div class="poll-fill" :style="{ width: (thread.poll.totalVotes > 0 ? pollPct(opt) : 0) + '%' }"></div>
+              <div class="poll-row">
+                <span class="poll-text">{{ opt.text }}</span>
+                <span class="poll-stats">
+                  <span class="poll-count">{{ opt.voteCount }}</span>
+                  <span class="poll-pct">{{ pollPct(opt) }}%</span>
+                </span>
+              </div>
+            </label>
+          </template>
+          <template v-else>
+            <button
+              v-for="opt in thread.poll.options"
+              :key="opt.id"
+              type="button"
+              class="poll-option"
+              :class="{
+                voted: isOptionVoted(opt.id),
+                leading: isLeading(opt),
+                disabled: pollDisabled,
+              }"
+              :disabled="pollDisabled"
+              @click="vote(opt.id)"
+            >
+              <div class="poll-fill" :style="{ width: (hasVoted || thread.poll.totalVotes > 0 ? pollPct(opt) : 0) + '%' }"></div>
+              <div class="poll-row">
+                <span class="poll-text">
+                  <span v-if="isOptionVoted(opt.id)" class="poll-check">✓</span>
+                  {{ opt.text }}
+                </span>
+                <span class="poll-stats">
+                  <span class="poll-count">{{ opt.voteCount }}</span>
+                  <span class="poll-pct">{{ pollPct(opt) }}%</span>
+                </span>
+              </div>
+            </button>
+          </template>
+        </div>
+        <button
+          v-if="thread.poll.allowMulti && !hasVoted && auth.isLoggedIn && !thread.poll.closed"
+          class="btn btn-forum btn-sm mt-2"
+          :disabled="voting || !selectedPollOptions.length"
+          @click="submitPollVote"
+        >提交投票</button>
+        <div v-else-if="thread.poll.allowMulti && !hasVoted && !auth.isLoggedIn" class="text-muted mt-2" style="font-size:13px">
+          请先 <a href="#" @click.prevent="authModal.openLogin()">登录</a> 后投票
         </div>
       </div>
 
@@ -204,7 +250,14 @@
           </div>
 
           <div class="post-content">
-            <template v-if="editingPost?.id === post.id && !(editingThread && post.floor === 1)">
+            <div
+              v-if="post.authorBlocked && !expandedBlockedPosts.has(post.id)"
+              class="blocked-post-bar"
+            >
+              已屏蔽该用户的回复
+              <button type="button" class="btn-link" @click="expandBlockedPost(post.id)">展开</button>
+            </div>
+            <template v-else-if="editingPost?.id === post.id && !(editingThread && post.floor === 1)">
               <MarkdownEditor v-model="editContent" class="mb-2" :compact="true" :rows="4" :hint="mdHint" />
               <div class="d-flex gap-2 mb-2">
                 <button class="btn btn-forum btn-sm" :disabled="savingEdit" @click="saveEdit(post)">{{ savingEdit ? '保存中...' : '保存' }}</button>
@@ -240,6 +293,7 @@
                   {{ post.replyToNickname }}：{{ post.replyToContent }}
                 </div>
                 <MarkdownBody v-if="postDisplayContent(post)" :content="postDisplayContent(post)" />
+                <div v-if="post.author.signature" class="post-signature">{{ post.author.signature }}</div>
               </div>
             </template>
 
@@ -495,6 +549,7 @@ import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import { useToastStore } from '../stores/toast'
+import { useDialogStore } from '../stores/dialog'
 import { markdownHint } from '../utils/markdown.js'
 import { compressImage, filesFromClipboard } from '../utils/image.js'
 import { uploadImages } from '../utils/upload.js'
@@ -506,6 +561,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
 const toast = useToastStore()
+const dialog = useDialogStore()
 const thread = ref(null)
 const posts = ref([])
 const postPage = ref(1)
@@ -524,6 +580,8 @@ const minReplyLength = 5
 const replyTextarea = ref(null)
 const replyTo = ref(null)
 const voting = ref(false)
+const selectedPollOptions = ref([])
+const expandedBlockedPosts = ref(new Set())
 const mdHint = markdownHint()
 const filterAuthorId = ref(null)
 
@@ -633,11 +691,17 @@ const tipping = ref(false)
 const tipError = ref('')
 const tipSuccess = ref('')
 const tipPresets = [1, 5, 10, 50, 100]
+const payingPin = ref(false)
 
 const canTipAuthor = computed(() => {
   if (!thread.value) return false
   if (!auth.isLoggedIn) return true // 显示入口，面板内引导登录
   return auth.user?.id !== thread.value.author?.id
+})
+
+const canPaidPin = computed(() => {
+  if (!thread.value || !auth.isLoggedIn) return false
+  return thread.value.canEdit && auth.user?.id === thread.value.author?.id
 })
 
 function openTipPanel() {
@@ -742,6 +806,8 @@ async function load() {
   posts.value = []
   filterAuthorId.value = null
   nestedExpanded.value = {}
+  expandedBlockedPosts.value = new Set()
+  selectedPollOptions.value = []
   closeInlineReply()
   try {
     const { data } = await api.get(`/threads/${route.params.id}`)
@@ -818,9 +884,9 @@ async function modAction(action) {
     'lock-replies': '禁止回复', 'unlock-replies': '解除禁回',
     hide: '隐藏', essence: '设为精品', unessence: '取消精品',
   }
-  const reason = prompt(`${labels[action] || action}原因（可空）`)
+  const reason = await dialog.prompt(`${labels[action] || action}原因（可空）`)
   if (reason === null) return
-  if (action === 'hide' && !confirm('隐藏后普通用户将看不到本帖，确定？')) return
+  if (action === 'hide' && !(await dialog.confirm('隐藏后普通用户将看不到本帖，确定？', { danger: true, confirmText: '隐藏' }))) return
   modBusy.value = true
   try {
     await api.post(`/threads/${route.params.id}/mod/${action}`, { reason: reason || null })
@@ -845,7 +911,7 @@ async function modMove() {
       for (const f of c.forums || []) list.push({ id: f.id, name: `${c.name}/${f.name}` })
     }
     const tip = list.map(f => `${f.id} ${f.name}`).join('\n')
-    const input = prompt(`输入目标版块 ID：\n${tip}`, String(thread.value.forumId))
+    const input = await dialog.prompt(`输入目标版块 ID：\n${tip}`, String(thread.value.forumId))
     if (input === null) return
     const forumId = Number(input)
     if (!forumId) { toast.error('无效版块'); return }
@@ -875,7 +941,7 @@ async function saveEdit(post) {
 }
 
 async function deletePost(post) {
-  if (!confirm('确定删除此回复？')) return
+  if (!(await dialog.confirm('确定删除此回复？', { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/posts/${post.id}`)
     post.deleted = true
@@ -978,7 +1044,7 @@ function scrollPageBottom() {
 }
 
 async function reportPost(post) {
-  const reason = prompt('请填写举报原因')
+  const reason = await dialog.prompt('请填写举报原因')
   if (!reason || reason.trim().length < 2) return
   try {
     await api.post('/reports', { targetType: 'post', targetId: post.id, reason: reason.trim() })
@@ -994,6 +1060,32 @@ function pollPct(opt) {
   return Math.round((opt.voteCount / total) * 100)
 }
 
+const hasVoted = computed(() => {
+  const poll = thread.value?.poll
+  if (!poll) return false
+  if (poll.myOptionIds?.length) return true
+  return poll.myOptionId != null
+})
+
+const pollDisabled = computed(() => {
+  const poll = thread.value?.poll
+  if (!poll) return true
+  if (poll.closed || hasVoted.value) return true
+  if (poll.allowMulti) return false
+  return !auth.isLoggedIn || voting.value
+})
+
+function isOptionVoted(optionId) {
+  const poll = thread.value?.poll
+  if (!poll) return false
+  if (poll.myOptionIds?.length) return poll.myOptionIds.includes(optionId)
+  return poll.myOptionId === optionId
+}
+
+function expandBlockedPost(id) {
+  expandedBlockedPosts.value = new Set([...expandedBlockedPosts.value, id])
+}
+
 function isLeading(opt) {
   const poll = thread.value?.poll
   if (!poll?.totalVotes) return false
@@ -1006,12 +1098,27 @@ async function vote(optionId) {
   try {
     const { data } = await api.post(`/threads/${route.params.id}/vote`, { optionId })
     thread.value.poll = data
+    selectedPollOptions.value = []
+  } catch (e) { toast.error(e.message) }
+  finally { voting.value = false }
+}
+
+async function submitPollVote() {
+  if (!selectedPollOptions.value.length) return
+  voting.value = true
+  try {
+    const body = selectedPollOptions.value.length === 1
+      ? { optionId: selectedPollOptions.value[0] }
+      : { optionIds: [...selectedPollOptions.value] }
+    const { data } = await api.post(`/threads/${route.params.id}/vote`, body)
+    thread.value.poll = data
+    selectedPollOptions.value = []
   } catch (e) { toast.error(e.message) }
   finally { voting.value = false }
 }
 
 async function reportThread() {
-  const reason = prompt('请填写举报原因')
+  const reason = await dialog.prompt('请填写举报原因')
   if (!reason) return
   try {
     await api.post('/reports', { targetType: 'thread', targetId: Number(route.params.id), reason })
@@ -1104,17 +1211,38 @@ async function tipThread() {
   tipSuccess.value = ''
   try {
     const { data } = await api.post(`/threads/${route.params.id}/tip`, { amount })
-    tipSuccess.value = data.message
     if (thread.value) {
       thread.value.tipCoins = (thread.value.tipCoins || 0) + amount
       thread.value.tipCount = (thread.value.tipCount || 0) + 1
     }
     await auth.fetchMe()
+    showTipInput.value = false
+    tipSuccess.value = ''
+    tipError.value = ''
     toast.success(data.message)
   } catch (e) {
     tipError.value = e.message
   } finally {
     tipping.value = false
+  }
+}
+
+async function paidPin() {
+  if (!auth.isLoggedIn) {
+    authModal.openLogin()
+    return
+  }
+  if (!(await dialog.confirm('确认花费金币置顶本帖？时长与费用以站点设置为准（默认可续期）。'))) return
+  payingPin.value = true
+  try {
+    const { data } = await api.post(`/threads/${route.params.id}/paid-pin`)
+    if (thread.value) thread.value.isPinned = true
+    await auth.fetchMe()
+    toast.success(data.message || '置顶成功')
+  } catch (e) {
+    toast.error(e.message)
+  } finally {
+    payingPin.value = false
   }
 }
 
@@ -1611,5 +1739,32 @@ watch(() => route.query.p, async (p) => {
 }
 .post-foot-btn.tip-foot {
   color: #c2410c;
+}
+.blocked-post-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+.post-signature {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
+.poll-check-input {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+.poll-option:has(.poll-check-input) .poll-row {
+  padding-left: 32px;
 }
 </style>

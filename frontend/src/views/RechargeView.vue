@@ -129,11 +129,13 @@ import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
 import { useToastStore } from '../stores/toast'
+import { useDialogStore } from '../stores/dialog'
 import api from '../api/http'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
 const toast = useToastStore()
+const dialog = useDialogStore()
 const packages = ref([])
 const orders = ref([])
 const selectedId = ref(null)
@@ -170,7 +172,7 @@ async function copyCode(code) {
     await navigator.clipboard.writeText(code)
     toast.success('卡密已复制')
   } catch {
-    prompt('请手动复制卡密', code)
+    await dialog.prompt('请手动复制卡密（可全选复制）', { defaultValue: code, title: '复制' })
   }
 }
 
@@ -205,7 +207,7 @@ async function createOrder(pkg) {
 }
 
 async function cancelOrder(id) {
-  if (!confirm('确定取消该申请？')) return
+  if (!(await dialog.confirm('确定取消该申请？', { danger: true, confirmText: '取消' }))) return
   try {
     await api.post(`/recharge/orders/${id}/cancel`)
     await loadOrders()

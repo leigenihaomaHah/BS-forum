@@ -150,6 +150,12 @@ const cards = computed(() => [
     stat: `${stats.value.myThreads} 篇帖子`,
   },
   {
+    to: '/me/reports',
+    title: '我的举报',
+    desc: '查看已提交的举报及处理状态',
+    stat: '查看记录',
+  },
+  {
     to: '/shop',
     title: '积分商城',
     desc: '头像框、改名卡、转盘券',

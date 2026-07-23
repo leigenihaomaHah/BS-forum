@@ -3,7 +3,14 @@
     <header class="site-header">
       <div class="util-bar">
         <div class="util-slogan">发现社区 · 分享观点 · 一起成长</div>
-        <div v-if="auth.isLoggedIn" class="util-mid">
+        <button
+          v-if="auth.isLoggedIn"
+          type="button"
+          class="util-hamburger"
+          aria-label="展开资产信息"
+          @click.stop="showUtilMenu = !showUtilMenu"
+        >☰</button>
+        <div v-if="auth.isLoggedIn" class="util-mid" :class="{ open: showUtilMenu }">
           <span class="level-badge" :class="{ 'lv-high': auth.user.level >= 5 }">
             Lv.{{ auth.user.level }} {{ auth.user.levelName }}
           </span>
@@ -115,6 +122,7 @@
       <nav class="main-nav">
         <router-link to="/" :class="{ active: $route.name === 'home' }">首页</router-link>
         <router-link to="/feed" :class="{ active: $route.name === 'feed' }">关注</router-link>
+        <router-link to="/leaderboard" :class="{ active: $route.name === 'leaderboard' }">排行榜</router-link>
         <router-link to="/sign-in" :class="{ active: $route.name === 'signin' }">每日签到</router-link>
         <router-link to="/shop" :class="{ active: $route.name === 'shop' }">积分商城</router-link>
         <router-link to="/invite" :class="{ active: $route.name === 'invite' }">邀请注册</router-link>
@@ -142,15 +150,6 @@
     <div class="footer-bar">
       BS Forum · .NET Core + Vue3 · 演示账号 admin / admin123
     </div>
-
-    <div class="toast-container">
-      <div
-        v-for="t in toast.items"
-        :key="t.id"
-        class="toast-notice"
-        :class="'toast-' + t.type"
-      >{{ t.msg }}</div>
-    </div>
   </div>
 </template>
 
@@ -159,7 +158,6 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
-import { useToastStore } from '../stores/toast'
 import api from '../api/http'
 import { getNextLevel, getLevelProgress, isAdminUser } from '../config/levels.js'
 import { timeAgo } from '../utils/time.js'
@@ -169,11 +167,12 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
-const toast = useToastStore()
 const searchQuery = ref('')
 const navCategories = ref([])
 const isAdmin = computed(() => isAdminUser(auth.user))
 const showUserMenu = ref(false)
+const showUtilMenu = ref(false)
+let themeMedia = null
 
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value
@@ -287,21 +286,51 @@ function startNotifPolling() {
 function closeOverlays(e) {
   if (!e.target.closest('.notif-wrapper')) showNotif.value = false
   if (!e.target.closest('.user-menu-wrap')) showUserMenu.value = false
+  if (!e.target.closest('.util-bar')) showUtilMenu.value = false
+}
+
+function applyTheme(pref) {
+  const p = pref || auth.user?.themePreference || 'light'
+  if (p === 'system') {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  } else {
+    document.documentElement.dataset.theme = p === 'dark' ? 'dark' : 'light'
+  }
+}
+
+function setupThemeWatcher() {
+  if (themeMedia) {
+    themeMedia.removeEventListener('change', onSystemThemeChange)
+    themeMedia = null
+  }
+  applyTheme(auth.user?.themePreference)
+  if (auth.user?.themePreference === 'system') {
+    themeMedia = window.matchMedia('(prefers-color-scheme: dark)')
+    themeMedia.addEventListener('change', onSystemThemeChange)
+  }
+}
+
+function onSystemThemeChange() {
+  if (auth.user?.themePreference === 'system') applyTheme('system')
 }
 
 onMounted(() => {
   loadNavCategories()
   startNotifPolling()
+  setupThemeWatcher()
   document.addEventListener('click', closeOverlays)
   window.addEventListener('forum:refresh-unread', refreshUnread)
 })
 
 watch(() => auth.isLoggedIn, startNotifPolling)
+watch(() => auth.user?.themePreference, setupThemeWatcher)
 
 onUnmounted(() => {
   clearInterval(notifTimer)
   document.removeEventListener('click', closeOverlays)
   window.removeEventListener('forum:refresh-unread', refreshUnread)
+  if (themeMedia) themeMedia.removeEventListener('change', onSystemThemeChange)
 })
 
 const nextLevelInfo = computed(() => auth.user ? getNextLevel(auth.user.points) : null)
@@ -506,31 +535,62 @@ function doSearch() {
 .notif-item-body { font-size: 12px; color: #3d4a63; margin-top: 2px; }
 .notif-item-time { font-size: 11px; color: #7a869c; margin-top: 2px; }
 .ta-center { text-align: center; }
-.toast-container {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 99999;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
+
+.util-hamburger {
+  display: none;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--ink-soft, #7a869c);
+  padding: 4px 8px;
 }
-.toast-notice {
-  pointer-events: auto;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
-  animation: toast-in 0.25s ease;
-  background: #142033;
-  color: #fff;
+
+@media (max-width: 768px) {
+  .util-hamburger { display: inline-flex; }
+  .util-mid {
+    display: none;
+    position: absolute;
+    right: 12px;
+    top: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    background: var(--surface-solid, #fff);
+    border: 1px solid var(--line, rgba(20,32,51,0.1));
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    z-index: 60;
+    min-width: 200px;
+  }
+  .util-mid.open { display: flex; }
+  .util-bar { position: relative; }
 }
-.toast-error { background: #dc2626; color: #fff; }
-.toast-success { background: #059669; color: #fff; }
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+
+:global([data-theme=dark]) {
+  --ink: #e8edf3;
+  --ink-soft: #b8c4d4;
+  --muted: #8b9bb0;
+  --line: rgba(255, 255, 255, 0.08);
+  --surface: rgba(30, 41, 59, 0.92);
+  --surface-solid: #1e293b;
 }
+:global([data-theme=dark]) body {
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  color: var(--ink);
+}
+:global([data-theme=dark]) .forum-wrap .panel,
+:global([data-theme=dark]) .panel {
+  background: var(--surface-solid);
+  color: var(--ink);
+}
+:global([data-theme=dark]) .user-menu-dropdown,
+:global([data-theme=dark]) .notif-dropdown {
+  background: var(--surface-solid);
+  border-color: var(--line);
+  color: var(--ink);
+}
+:global([data-theme=dark]) .user-menu-item { color: var(--ink); }
+:global([data-theme=dark]) .user-menu-item:hover { background: rgba(255,255,255,0.06); }
 </style>

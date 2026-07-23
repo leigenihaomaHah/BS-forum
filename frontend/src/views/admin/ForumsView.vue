@@ -72,8 +72,10 @@ import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import IconPicker from '../../components/IconPicker.vue'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 
 const categories = ref([])
 
@@ -130,7 +132,7 @@ async function addCategory() {
 }
 
 async function delCategory(id) {
-  if (!confirm('确定删除此分类及其所有版块？')) return
+  if (!(await dialog.confirm('确定删除此分类及其所有版块？', { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/categories/${id}`)
     categories.value = categories.value.filter((c) => c.id !== id)
@@ -182,7 +184,7 @@ async function addForum(categoryId) {
 }
 
 async function delForum(id) {
-  if (!confirm('确定删除此版块？')) return
+  if (!(await dialog.confirm('确定删除此版块？', { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/forums/${id}`)
     for (const cat of categories.value) {

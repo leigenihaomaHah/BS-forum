@@ -86,9 +86,11 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 
 const route = useRoute()
 const items = ref([])
@@ -123,7 +125,7 @@ async function approve(t) {
 }
 
 async function reject(t) {
-  const reason = prompt('驳回原因（可空）')
+  const reason = await dialog.prompt('驳回原因（可空）')
   if (reason === null) return
   try {
     await api.post(`/admin/threads/${t.id}/reject`, { reason: reason || null })
@@ -135,7 +137,7 @@ async function reject(t) {
 async function moveThread(t) {
   if (!forums.value.length) await loadForums()
   const options = forums.value.map(f => `${f.id}=${f.name}`).join('\n')
-  const input = prompt(`移到哪个版块？输入版块 ID：\n${options}`, String(t.forumId || ''))
+  const input = await dialog.prompt(`移到哪个版块？输入版块 ID：\n${options}`, String(t.forumId || ''))
   if (input === null) return
   const forumId = Number(input)
   if (!forumId) { toast.error('无效版块'); return }
@@ -173,12 +175,12 @@ async function copyLink(id) {
     await navigator.clipboard.writeText(url)
     toast.success('已复制链接：' + url)
   } catch {
-    prompt('复制链接', url)
+    await dialog.prompt('复制链接（可全选复制）', { defaultValue: url, title: '复制' })
   }
 }
 
 async function toggleHide(t) {
-  const reason = prompt(t.isHidden ? '取消拉黑原因（可空）' : '拉黑原因（可空）') ?? undefined
+  const reason = await dialog.prompt(t.isHidden ? '取消拉黑原因（可空）' : '拉黑原因（可空）')
   if (reason === null) return
   try {
     await api.post(`/admin/threads/${t.id}/${t.isHidden ? 'unhide' : 'hide'}`, { reason: reason || null })
@@ -187,7 +189,7 @@ async function toggleHide(t) {
 }
 
 async function toggleLock(t) {
-  const reason = prompt(t.repliesLocked ? '解除禁回原因（可空）' : '禁止回复原因（可空）') ?? undefined
+  const reason = await dialog.prompt(t.repliesLocked ? '解除禁回原因（可空）' : '禁止回复原因（可空）')
   if (reason === null) return
   try {
     await api.post(`/admin/threads/${t.id}/${t.repliesLocked ? 'unlock-replies' : 'lock-replies'}`, { reason: reason || null })
@@ -203,7 +205,7 @@ async function togglePin(t) {
 }
 
 async function toggleEssence(t) {
-  const reason = prompt(t.isEssence ? '取消精品原因（可空）' : '设为精品原因（可空）')
+  const reason = await dialog.prompt(t.isEssence ? '取消精品原因（可空）' : '设为精品原因（可空）')
   if (reason === null) return
   try {
     const { data } = await api.post(`/admin/threads/${t.id}/${t.isEssence ? 'unessence' : 'essence'}`, { reason: reason || null })
@@ -213,7 +215,7 @@ async function toggleEssence(t) {
 }
 
 async function delThread(id) {
-  if (!confirm('确定删除此帖？')) return
+  if (!(await dialog.confirm('确定删除此帖？', { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/threads/${id}`)
     await load(page.value)
@@ -222,7 +224,8 @@ async function delThread(id) {
 
 async function batchAction(action) {
   const labels = { hide: '拉黑', pin: '置顶', delete: '删除' }
-  if (!confirm(`确定对 ${selectedIds.value.length} 个帖子执行"${labels[action] || action}"操作？`)) return
+  const opts = action === 'delete' ? { danger: true, confirmText: '删除' } : {}
+  if (!(await dialog.confirm(`确定对 ${selectedIds.value.length} 个帖子执行"${labels[action] || action}"操作？`, opts))) return
   try {
     const { data } = await api.post('/admin/threads/batch', { ids: [...selectedIds.value], action })
     toast.success(`批量操作完成`)

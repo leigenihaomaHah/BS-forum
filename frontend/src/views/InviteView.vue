@@ -27,10 +27,12 @@ import { onMounted, ref } from 'vue'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAuthModalStore } from '../stores/authModal'
+import { useDialogStore } from '../stores/dialog'
 import api from '../api/http'
 
 const auth = useAuthStore()
 const authModal = useAuthModalStore()
+const dialog = useDialogStore()
 const info = ref(null)
 const msg = ref('')
 
@@ -46,7 +48,7 @@ async function copy() {
     await navigator.clipboard.writeText(url)
     msg.value = '已复制：' + url
   } catch {
-    prompt('复制链接', url)
+    await dialog.prompt('复制链接（可全选复制）', { defaultValue: url, title: '复制' })
   }
 }
 

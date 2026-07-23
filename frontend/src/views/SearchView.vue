@@ -23,6 +23,8 @@
           <option value="coin">金币</option>
           <option value="poll">投票</option>
         </select>
+        <input v-model="fromDate" type="date" class="form-control" style="max-width:150px" title="起始日期" />
+        <input v-model="toDate" type="date" class="form-control" style="max-width:150px" title="结束日期" />
         <button class="btn btn-forum" @click="load(1)">搜索</button>
       </div>
     </div>
@@ -80,6 +82,8 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize))
 const query = ref(route.query.q?.toString() || '')
 const forumId = ref(route.query.forumId?.toString() || '')
 const type = ref(route.query.type?.toString() || '')
+const fromDate = ref(route.query.from?.toString() || '')
+const toDate = ref(route.query.to?.toString() || '')
 
 function escapeHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -124,6 +128,8 @@ async function load(p) {
       q: query.value,
       forumId: forumId.value || undefined,
       type: type.value || undefined,
+      from: fromDate.value || undefined,
+      to: toDate.value || undefined,
       page: page.value > 1 ? String(page.value) : undefined,
     },
   })
@@ -135,6 +141,8 @@ async function load(p) {
         pageSize,
         forumId: forumId.value || undefined,
         type: type.value || undefined,
+        from: fromDate.value || undefined,
+        to: toDate.value || undefined,
       },
     })
     items.value = data.items

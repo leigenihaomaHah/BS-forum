@@ -96,12 +96,41 @@ public class AuthService
         if (user == null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return (null, "用户名或密码错误");
 
+        user.LastActiveAt = ChinaTime.Now;
+        await _db.SaveChangesAsync();
+
         var token = _jwt.CreateToken(user);
         return (new AuthResponse(token, await ToUserDtoAsync(user)), null);
     }
 
     public Task<(bool Success, string? Error)> ResetPasswordAsync(ResetPasswordRequest req)
-        => Task.FromResult<(bool, string?)>((false, "出于安全考虑，已关闭昵称找回密码。请联系管理员在后台重置密码。"));
+        => ResetPasswordInternalAsync(req);
+
+    private async Task<(bool Success, string? Error)> ResetPasswordInternalAsync(ResetPasswordRequest req)
+    {
+        if (!_captcha.Validate(req.CaptchaId, req.CaptchaCode))
+            return (false, "验证码错误或已过期");
+
+        var username = (req.Username ?? "").Trim();
+        var nickname = (req.Nickname ?? "").Trim();
+        if (username.Length < 2 || nickname.Length < 1)
+            return (false, "请填写用户名和昵称");
+
+        var rateKey = $"reset-pwd:{username.ToLowerInvariant()}";
+        if (!_rate.TryAcquire(rateKey, 5, TimeSpan.FromHours(1)))
+            return (false, "尝试过于频繁，请稍后再试");
+
+        var pwdError = PasswordRules.Validate(req.NewPassword);
+        if (pwdError != null) return (false, pwdError);
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user == null || !string.Equals(user.Nickname, nickname, StringComparison.Ordinal))
+            return (false, "用户名与昵称不匹配");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        await _db.SaveChangesAsync();
+        return (true, null);
+    }
 
     public async Task<UserDto?> GetMeAsync(int userId)
     {
@@ -151,6 +180,19 @@ public class AuthService
         if (req.ShowFavorites.HasValue) user.ShowFavorites = req.ShowFavorites.Value;
         if (req.NotifyReply.HasValue) user.NotifyReply = req.NotifyReply.Value;
         if (req.NotifyMention.HasValue) user.NotifyMention = req.NotifyMention.Value;
+        if (req.Signature != null)
+        {
+            var sig = req.Signature.Trim();
+            if (sig.Length > 200) return (null, "签名档最多 200 字");
+            user.Signature = string.IsNullOrEmpty(sig) ? null : sig;
+        }
+        if (req.ThemePreference != null)
+        {
+            var theme = req.ThemePreference.Trim().ToLowerInvariant();
+            if (theme is not ("light" or "dark" or "system"))
+                return (null, "主题选项无效");
+            user.ThemePreference = theme;
+        }
         if (req.Email != null)
         {
             var email = req.Email.Trim();
@@ -231,7 +273,10 @@ public class AuthService
             coins += milestone.CoinsBonus;
         }
 
+        points = await _settings.ApplyPointsEventAsync(points);
+
         user.LastSignInDate = ChinaTime.Now;
+        user.LastActiveAt = ChinaTime.Now;
         user.Points += points;
         user.Coins += coins;
 
@@ -296,7 +341,7 @@ public class AuthService
             VipAccess.EffectiveTier(user), VipAccess.TierLabel(VipAccess.EffectiveTier(user)),
             user.LotteryTickets, user.AvatarFrame,
             user.ShowPurchases, user.ShowFavorites, user.Email,
-            user.NotifyReply, user.NotifyMention);
+            user.NotifyReply, user.NotifyMention, user.Signature, user.ThemePreference ?? "light");
     }
 
     public async Task<UserProfileDto?> GetProfileAsync(int userId, int? viewerId = null)
@@ -310,13 +355,15 @@ public class AuthService
         var followers = await _db.UserFollows.CountAsync(f => f.FolloweeId == userId);
         var following = await _db.UserFollows.CountAsync(f => f.FollowerId == userId);
         var followed = viewerId.HasValue && await _db.UserFollows.AnyAsync(f => f.FollowerId == viewerId && f.FolloweeId == userId);
+        var blocked = viewerId.HasValue && await _db.UserBlocks.AnyAsync(b => b.UserId == viewerId && b.BlockedUserId == userId);
+        var followsMe = viewerId.HasValue && await _db.UserFollows.AnyAsync(f => f.FollowerId == userId && f.FolloweeId == viewerId);
         return new UserProfileDto(
             user.Id, user.Username, user.Nickname, user.Avatar,
             user.Points, user.Coins, user.Level, levelName, next,
             user.ConsecutiveSignInDays, user.CreatedAt,
             user.IsEffectivelyVip(), user.AvatarFrame,
             VipAccess.EffectiveTier(user), VipAccess.TierLabel(VipAccess.EffectiveTier(user)),
-            badges, followers, following, followed);
+            badges, followers, following, followed, user.Signature, blocked, followsMe);
     }
 
     public async Task<PagedResult<ActivityItemDto>> GetActivityAsync(

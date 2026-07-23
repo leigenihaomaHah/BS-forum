@@ -24,7 +24,9 @@
               <span class="ms-2 text-muted">@{{ profile.username }}</span>
             </div>
             <div class="follow-row mb-2">
-              <span>粉丝 {{ profile.followerCount ?? 0 }} · 关注 {{ profile.followingCount ?? 0 }}</span>
+              <router-link :to="`/user/${profile.id}/followers`" class="follow-link">粉丝 {{ profile.followerCount ?? 0 }}</router-link>
+              <span> · </span>
+              <router-link :to="`/user/${profile.id}/following`" class="follow-link">关注 {{ profile.followingCount ?? 0 }}</router-link>
               <button
                 v-if="auth.isLoggedIn && !isSelf"
                 class="btn-sm ms-2"
@@ -47,6 +49,7 @@
                 class="btn-outline-modern ms-2"
               >编辑资料</router-link>
             </div>
+            <div v-if="profile.signature" class="profile-signature mb-2">{{ profile.signature }}</div>
             <div v-if="badges.length" class="badge-row mb-2">
               <span v-for="b in badges.filter(x => x.earnedAt)" :key="b.code" class="ubadge" :title="b.description">{{ b.name }}</span>
             </div>
@@ -389,6 +392,7 @@ async function load() {
   try {
     const { data } = await api.get(`/users/${route.params.id}`)
     profile.value = data
+    blocked.value = !!data.blockedByMe
     try {
       const { data: b } = await api.get(`/users/${route.params.id}/badges`)
       badges.value = b
@@ -688,6 +692,16 @@ watch(() => route.params.id, load)
   color: #b45309;
 }
 .follow-row { font-size: 13px; color: #64748b; }
+.follow-link { color: #64748b; text-decoration: none; font-weight: 600; }
+.follow-link:hover { color: #0d9488; }
+.profile-signature {
+  font-size: 13px;
+  color: #64748b;
+  font-style: italic;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
 .badge-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .ubadge {
   font-size: 11px;

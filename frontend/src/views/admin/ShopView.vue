@@ -75,8 +75,10 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const items = ref([])
 const editing = ref(null)
 const saving = ref(false)
@@ -121,7 +123,7 @@ async function save() {
 }
 
 async function remove(i) {
-  if (!confirm(`下架「${i.name}」？`)) return
+  if (!(await dialog.confirm(`下架「${i.name}」？`, { danger: true, confirmText: '下架' }))) return
   try {
     await api.delete(`/admin/shop/${i.id}`)
     await load()

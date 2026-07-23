@@ -56,6 +56,14 @@
           <div v-if="threadType === 'poll'" class="mb-2">
             <input v-for="(opt, i) in pollOptions" :key="i" v-model="pollOptions[i]" class="form-control mb-1" :placeholder="`选项 ${i + 1}`" />
             <button type="button" class="btn btn-sm btn-outline-secondary" v-if="pollOptions.length < 6" @click="pollOptions.push('')">加选项</button>
+            <label class="check-row mt-2">
+              <input v-model="pollAllowMulti" type="checkbox" />
+              允许多选
+            </label>
+            <div class="mt-2">
+              <label class="form-label">截止时间（可选）</label>
+              <input v-model="pollEndsAt" type="datetime-local" class="form-control" style="max-width:280px" />
+            </div>
           </div>
           <input v-model="tagsInput" class="form-control mb-2" maxlength="40" placeholder="标签，逗号分隔，最多 3 个（可选）" />
 
@@ -68,7 +76,13 @@
             @paste-images="appendImageFiles"
           />
 
-          <div class="image-upload mb-2" tabindex="0" @paste="onImageAreaPaste">
+          <div
+            class="image-upload mb-2"
+            tabindex="0"
+            @paste="onImageAreaPaste"
+            @dragover.prevent
+            @drop.prevent="onImageDrop"
+          >
             <div class="image-preview-list">
               <div v-for="(img, idx) in images" :key="idx" class="image-preview-item">
                 <img :src="img" class="preview-thumb" alt="" @click="previewIdx = idx" />
@@ -135,6 +149,8 @@ const content = ref('')
 const threadType = ref('public')
 const coinPrice = ref(5)
 const pollOptions = ref(['', ''])
+const pollAllowMulti = ref(false)
+const pollEndsAt = ref('')
 const tagsInput = ref('')
 const images = ref([])
 const error = ref('')
@@ -151,7 +167,7 @@ let skipAutosave = true
 const LS_DRAFT_KEY = () => `draft_${forumId.value}`
 
 function saveLocalDraft() {
-  const data = { title: title.value, content: content.value, type: threadType.value, coinPrice: coinPrice.value, tags: tagsInput.value, pollOptions: pollOptions.value, images: images.value }
+  const data = { title: title.value, content: content.value, type: threadType.value, coinPrice: coinPrice.value, tags: tagsInput.value, pollOptions: pollOptions.value, pollAllowMulti: pollAllowMulti.value, pollEndsAt: pollEndsAt.value, images: images.value }
   try { localStorage.setItem(LS_DRAFT_KEY(), JSON.stringify(data)) } catch {}
 }
 
@@ -185,6 +201,8 @@ function applyDraft(d) {
   coinPrice.value = d.coinPrice || 5
   tagsInput.value = (d.tags || []).join(', ')
   pollOptions.value = (d.pollOptions && d.pollOptions.length >= 2) ? [...d.pollOptions] : ['', '']
+  pollAllowMulti.value = !!d.pollAllowMulti
+  pollEndsAt.value = d.pollEndsAt || ''
   images.value = d.images || []
   draftHint.value = '已恢复草稿'
 }
@@ -226,6 +244,8 @@ async function loadDraft() {
       coinPrice.value = local.coinPrice || 5
       tagsInput.value = local.tags || ''
       pollOptions.value = (local.pollOptions && local.pollOptions.length >= 2) ? [...local.pollOptions] : ['', '']
+      pollAllowMulti.value = !!local.pollAllowMulti
+      pollEndsAt.value = local.pollEndsAt || ''
       images.value = local.images || []
       draftHint.value = '已恢复本地草稿'
       loaded = true
@@ -244,6 +264,8 @@ function draftPayload() {
     coinPrice: threadType.value === 'coin' ? Number(coinPrice.value) : 0,
     tags: tagsInput.value.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 3),
     pollOptions: threadType.value === 'poll' ? pollOptions.value.map(o => o.trim()).filter(Boolean) : null,
+    pollAllowMulti: threadType.value === 'poll' ? pollAllowMulti.value : false,
+    pollEndsAt: threadType.value === 'poll' && pollEndsAt.value ? new Date(pollEndsAt.value).toISOString() : null,
     images: images.value,
   }
 }
@@ -283,7 +305,7 @@ function scheduleAutosave() {
   }, 2500)
 }
 
-watch([title, content, threadType, coinPrice, tagsInput, pollOptions, images], () => { scheduleAutosave(); scheduleLocalAutosave() }, { deep: true })
+watch([title, content, threadType, coinPrice, tagsInput, pollOptions, pollAllowMulti, pollEndsAt, images], () => { scheduleAutosave(); scheduleLocalAutosave() }, { deep: true })
 
 function addImages(e) {
   appendImageFiles(Array.from(e.target.files || []))
@@ -294,6 +316,12 @@ function onImageAreaPaste(e) {
   const files = filesFromClipboard(e.clipboardData)
   if (!files.length) return
   e.preventDefault()
+  appendImageFiles(files)
+}
+
+function onImageDrop(e) {
+  const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'))
+  if (!files.length) return
   appendImageFiles(files)
 }
 
@@ -364,6 +392,8 @@ async function submit() {
       coinPrice: threadType.value === 'coin' ? Number(coinPrice.value) : 0,
       tags,
       pollOptions: threadType.value === 'poll' ? pollOptions.value.map(o => o.trim()).filter(Boolean) : null,
+    pollAllowMulti: threadType.value === 'poll' ? pollAllowMulti.value : false,
+    pollEndsAt: threadType.value === 'poll' && pollEndsAt.value ? new Date(pollEndsAt.value).toISOString() : null,
     })
     clearLocalDraft()
     await auth.fetchMe()
@@ -405,6 +435,13 @@ onUnmounted(() => { clearTimeout(autosaveTimer); clearTimeout(lsTimer) })
 .type-icon { font-size: 20px; }
 .type-label { font-size: 13px; font-weight: 700; color: #142033; }
 .type-desc { font-size: 11px; color: #7a869c; }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
 .image-upload { user-select: none; }
 .image-preview-list {
   display: flex;

@@ -48,8 +48,10 @@
 import { ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const items = ref([])
 const status = ref('pending')
 
@@ -82,7 +84,8 @@ async function load() {
 }
 
 async function handle(r, action) {
-  const note = prompt('处理备注（可空）') ?? ''
+  const note = await dialog.prompt('处理备注（可空）')
+  if (note === null) return
   try {
     await api.post(`/admin/reports/${r.id}/handle`, { action, note: note || null })
     toast.success('已处理')

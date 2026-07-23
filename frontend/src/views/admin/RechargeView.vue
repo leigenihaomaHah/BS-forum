@@ -170,9 +170,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import PaginationComp from '../../components/PaginationComp.vue'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 
 const orders = ref([])
 const packages = ref([])
@@ -225,7 +227,7 @@ async function copyOne(code) {
     await navigator.clipboard.writeText(code)
     toast.success('卡密已复制')
   } catch {
-    prompt('请手动复制卡密', code)
+    await dialog.prompt('请手动复制卡密（可全选复制）', { defaultValue: code, title: '复制' })
   }
 }
 
@@ -264,7 +266,7 @@ async function loadOrders() {
 }
 
 async function confirmOrder(o) {
-  if (!confirm(`确认收到 ¥${o.priceYuan}？\n将为「${o.nickname}」生成卡密并自动兑换「${o.packageName}」。`)) return
+  if (!(await dialog.confirm(`确认收到 ¥${o.priceYuan}？\n将为「${o.nickname}」生成卡密并自动兑换「${o.packageName}」。`))) return
   try {
     const { data } = await api.post(`/admin/recharge/orders/${o.id}/confirm`, { reason: 'manual_confirm' })
     lastCard.value = data.cardCode || data.order?.cardCode || ''
@@ -275,7 +277,7 @@ async function confirmOrder(o) {
 }
 
 async function cancelOrder(id) {
-  if (!confirm('取消该申请？')) return
+  if (!(await dialog.confirm('取消该申请？', { danger: true, confirmText: '取消' }))) return
   try {
     await api.post(`/admin/recharge/orders/${id}/cancel`)
     await loadOrders()

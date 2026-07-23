@@ -18,6 +18,10 @@ public class CommunityService
         ("signin_7", "签到达人", "连续签到 7 天"),
         ("signin_30", "签到满贯", "连续签到 30 天"),
         ("essence_author", "精品作者", "帖子被设为精品"),
+        ("essence_3", "内容贡献者", "累计 3 篇精品帖"),
+        ("likes_50", "人气王", "主题累计获赞 50"),
+        ("coins_500", "金币富豪", "金币达到 500"),
+        ("veteran_1y", "论坛活化石", "注册满 1 年"),
         ("social_10", "人气新星", "获得 10 个粉丝"),
         ("shopper", "商场常客", "在积分商城消费过"),
     ];
@@ -101,6 +105,77 @@ public class CommunityService
         await TryAwardBadgeAsync(followeeId, "social_10", async () =>
             await _db.UserFollows.CountAsync(f => f.FolloweeId == followeeId) >= 10);
         return (new FollowResultDto(true, "关注成功"), null);
+    }
+
+    public async Task<PagedResult<FollowUserItemDto>> GetFollowersAsync(int userId, int? viewerId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var q = _db.UserFollows.Include(f => f.Follower).Where(f => f.FolloweeId == userId);
+        var total = await q.CountAsync();
+        var rows = await q.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var items = await MapFollowUsersAsync(rows.Select(r => (r.Follower, r.CreatedAt)).ToList(), viewerId);
+        return new PagedResult<FollowUserItemDto>(items, total, page, pageSize);
+    }
+
+    public async Task<PagedResult<FollowUserItemDto>> GetFollowingAsync(int userId, int? viewerId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var q = _db.UserFollows.Include(f => f.Followee).Where(f => f.FollowerId == userId);
+        var total = await q.CountAsync();
+        var rows = await q.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var items = await MapFollowUsersAsync(rows.Select(r => (r.Followee, r.CreatedAt)).ToList(), viewerId);
+        return new PagedResult<FollowUserItemDto>(items, total, page, pageSize);
+    }
+
+    private async Task<List<FollowUserItemDto>> MapFollowUsersAsync(List<(User User, DateTime At)> rows, int? viewerId)
+    {
+        var ids = rows.Select(r => r.User.Id).ToList();
+        HashSet<int> iFollow = [];
+        HashSet<int> followMe = [];
+        if (viewerId.HasValue && ids.Count > 0)
+        {
+            iFollow = (await _db.UserFollows.Where(f => f.FollowerId == viewerId && ids.Contains(f.FolloweeId))
+                .Select(f => f.FolloweeId).ToListAsync()).ToHashSet();
+            followMe = (await _db.UserFollows.Where(f => f.FolloweeId == viewerId && ids.Contains(f.FollowerId))
+                .Select(f => f.FollowerId).ToListAsync()).ToHashSet();
+        }
+        var list = new List<FollowUserItemDto>();
+        foreach (var (u, at) in rows)
+        {
+            var ln = await _levels.GetLevelNameAsync(u.Level);
+            list.Add(new FollowUserItemDto(
+                u.Id, u.Nickname, u.Avatar, u.Level, ln, u.IsEffectivelyVip(),
+                iFollow.Contains(u.Id), followMe.Contains(u.Id), at));
+        }
+        return list;
+    }
+
+    public async Task<PagedResult<MyReportItemDto>> GetMyReportsAsync(int userId, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var q = _db.Reports.Where(r => r.ReporterId == userId);
+        var total = await q.CountAsync();
+        var rows = await q.OrderByDescending(r => r.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var items = new List<MyReportItemDto>();
+        foreach (var r in rows)
+        {
+            string? title = null;
+            if (r.TargetType == "thread")
+                title = await _db.Threads.Where(t => t.Id == r.TargetId).Select(t => t.Title).FirstOrDefaultAsync();
+            else if (r.TargetType == "post")
+            {
+                var p = await _db.Posts.Include(x => x.Thread).FirstOrDefaultAsync(x => x.Id == r.TargetId);
+                title = p == null ? null : $"#{p.Floor}楼 · {p.Thread.Title}";
+            }
+            else if (r.TargetType == "user")
+                title = await _db.Users.Where(u => u.Id == r.TargetId).Select(u => u.Nickname).FirstOrDefaultAsync();
+            items.Add(new MyReportItemDto(
+                r.Id, r.TargetType, r.TargetId, r.Reason, r.Status, r.CreatedAt, r.HandleNote, r.HandledAt, title));
+        }
+        return new PagedResult<MyReportItemDto>(items, total, page, pageSize);
     }
 
     public async Task<PagedResult<FeedItemDto>> GetFeedAsync(int userId, int page = 1, int pageSize = 20)
@@ -194,9 +269,15 @@ public class CommunityService
     public async Task<List<string>> GetThreadTagsAsync(int threadId) =>
         await _db.ThreadTags.Where(tt => tt.ThreadId == threadId).Select(tt => tt.Tag.Name).ToListAsync();
 
-    public async Task CreatePollAsync(int threadId, List<string>? options)
+    public async Task CreatePollAsync(int threadId, List<string>? options, DateTime? endsAt = null, bool allowMulti = false)
     {
         if (options == null || options.Count < 2) return;
+        var thread = await _db.Threads.FindAsync(threadId);
+        if (thread != null)
+        {
+            thread.PollEndsAt = endsAt;
+            thread.PollAllowMulti = allowMulti;
+        }
         var i = 0;
         foreach (var text in options.Select(o => o.Trim()).Where(o => o.Length > 0).Take(6))
         {
@@ -207,30 +288,53 @@ public class CommunityService
 
     public async Task<PollDto?> GetPollAsync(int threadId, int? userId)
     {
+        var thread = await _db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == threadId);
         var options = await _db.PollOptions.Where(o => o.ThreadId == threadId).OrderBy(o => o.SortOrder).ToListAsync();
         if (options.Count == 0) return null;
+        var closed = thread?.PollEndsAt != null && thread.PollEndsAt <= ChinaTime.Now;
         int? my = null;
+        List<int>? myIds = null;
         if (userId.HasValue)
         {
-            var vote = await _db.PollVotes.FirstOrDefaultAsync(v => v.ThreadId == threadId && v.UserId == userId.Value);
-            my = vote?.OptionId;
+            var votes = await _db.PollVotes.Where(v => v.ThreadId == threadId && v.UserId == userId.Value).Select(v => v.OptionId).ToListAsync();
+            myIds = votes;
+            my = votes.FirstOrDefault();
+            if (votes.Count == 0) my = null;
         }
         return new PollDto(
             options.Select(o => new PollOptionDto(o.Id, o.Text, o.VoteCount, o.SortOrder)).ToList(),
             my,
-            options.Sum(o => o.VoteCount));
+            options.Sum(o => o.VoteCount),
+            thread?.PollEndsAt,
+            thread?.PollAllowMulti ?? false,
+            closed,
+            myIds);
     }
 
-    public async Task<(PollDto? Result, string? Error)> VotePollAsync(int userId, int threadId, int optionId)
+    public async Task<(PollDto? Result, string? Error)> VotePollAsync(int userId, int threadId, VotePollRequest req)
     {
         var thread = await _db.Threads.FindAsync(threadId);
         if (thread == null || thread.IsHidden) return (null, "帖子不存在");
+        if (thread.PollEndsAt != null && thread.PollEndsAt <= ChinaTime.Now)
+            return (null, "投票已截止");
+
+        var optionIds = (req.OptionIds != null && req.OptionIds.Count > 0)
+            ? req.OptionIds.Distinct().ToList()
+            : (req.OptionId > 0 ? [req.OptionId] : []);
+        if (optionIds.Count == 0) return (null, "请选择选项");
+        if (!thread.PollAllowMulti && optionIds.Count > 1)
+            return (null, "本投票为单选");
+
         if (await _db.PollVotes.AnyAsync(v => v.ThreadId == threadId && v.UserId == userId))
             return (null, "你已经投过票了");
-        var opt = await _db.PollOptions.FirstOrDefaultAsync(o => o.Id == optionId && o.ThreadId == threadId);
-        if (opt == null) return (null, "选项不存在");
-        opt.VoteCount += 1;
-        _db.PollVotes.Add(new PollVote { ThreadId = threadId, OptionId = optionId, UserId = userId });
+
+        foreach (var optionId in optionIds)
+        {
+            var opt = await _db.PollOptions.FirstOrDefaultAsync(o => o.Id == optionId && o.ThreadId == threadId);
+            if (opt == null) return (null, "选项不存在");
+            opt.VoteCount += 1;
+            _db.PollVotes.Add(new PollVote { ThreadId = threadId, OptionId = optionId, UserId = userId });
+        }
         await _db.SaveChangesAsync();
         return (await GetPollAsync(threadId, userId), null);
     }
@@ -349,6 +453,8 @@ public class CommunityService
             ("signin", "每日签到", "完成今日签到", 1, 5, 1),
             ("reply", "回帖达人", "今日回帖 3 次", 3, 6, 1),
             ("like", "热情互动", "今日点赞 1 次", 1, 3, 0),
+            ("post", "发帖达人", "今日发布 1 个主题", 1, 8, 2),
+            ("browse", "逛逛社区", "今日浏览 5 个帖子", 5, 4, 1),
         };
 
         var list = new List<TaskItemDto>();
@@ -408,7 +514,11 @@ public class CommunityService
     public async Task<List<BadgeDto>> GetBadgesAsync(int userId)
     {
         var earned = await _db.UserBadges.Where(b => b.UserId == userId).ToDictionaryAsync(b => b.BadgeCode, b => b.EarnedAt);
-        return BadgeDefs.Select(d => new BadgeDto(d.Code, d.Name, d.Desc, earned.GetValueOrDefault(d.Code))).ToList();
+        return BadgeDefs.Select(d =>
+        {
+            DateTime? at = earned.TryGetValue(d.Code, out var e) ? e : null;
+            return new BadgeDto(d.Code, d.Name, d.Desc, at);
+        }).ToList();
     }
 
     public async Task TryAwardBadgeAsync(int userId, string code, Func<Task<bool>> cond)
@@ -423,8 +533,23 @@ public class CommunityService
         await _db.SaveChangesAsync();
     }
 
-    public async Task OnEssenceAwardedAsync(int authorId) =>
+    public async Task OnEssenceAwardedAsync(int authorId)
+    {
         await TryAwardBadgeAsync(authorId, "essence_author", () => Task.FromResult(true));
+        await TryAwardBadgeAsync(authorId, "essence_3", async () =>
+            await _db.Threads.CountAsync(t => t.AuthorId == authorId && t.IsEssence && !t.IsHidden) >= 3);
+    }
+
+    public async Task TryAwardProgressBadgesAsync(int userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return;
+        await TryAwardBadgeAsync(userId, "likes_50", async () =>
+            await _db.Threads.Where(t => t.AuthorId == userId && !t.IsHidden).SumAsync(t => (int?)t.LikeCount) >= 50);
+        await TryAwardBadgeAsync(userId, "coins_500", () => Task.FromResult(user.Coins >= 500));
+        await TryAwardBadgeAsync(userId, "veteran_1y", () =>
+            Task.FromResult(user.CreatedAt <= ChinaTime.Now.AddYears(-1)));
+    }
 
     public async Task<(PagedResult<TagThreadItemDto>? Result, string? Error)> GetThreadsByTagAsync(string tagName, int page, int pageSize)
     {

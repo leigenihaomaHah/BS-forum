@@ -22,10 +22,12 @@ public class ThreadService
     private readonly CommunityService _community;
     private readonly RetentionService _retention;
     private readonly SiteSettingsService _settings;
+    private readonly ContentFilterService _filter;
 
     public ThreadService(
         AppDbContext db, LevelService levels, RewardService rewards, NotificationService notifications,
-        CommunityService community, RetentionService retention, SiteSettingsService settings)
+        CommunityService community, RetentionService retention, SiteSettingsService settings,
+        ContentFilterService filter)
     {
         _db = db;
         _levels = levels;
@@ -34,6 +36,7 @@ public class ThreadService
         _community = community;
         _retention = retention;
         _settings = settings;
+        _filter = filter;
     }
 
     public async Task<PagedResult<ThreadListItemDto>> GetThreadsAsync(
@@ -44,6 +47,10 @@ public class ThreadService
 
         var query = _db.Threads.Include(t => t.Author)
             .Where(t => t.ForumId == forumId && !t.IsHidden && !t.PendingReview);
+
+        await ClearExpiredPinsAsync(forumId);
+
+        var now = ChinaTime.Now;
 
         if (viewerId.HasValue)
         {
@@ -67,10 +74,10 @@ public class ThreadService
 
         IQueryable<ForumThread> ordered = sort switch
         {
-            "newest" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.CreatedAt),
-            "hot" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.ReplyCount * 30 + t.Views + t.LikeCount * 50),
-            "replies" => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.ReplyCount),
-            _ => query.OrderByDescending(t => t.IsPinned).ThenByDescending(t => t.LastReplyAt),
+            "newest" => query.OrderByDescending(t => t.IsPinned && (t.PinnedUntil == null || t.PinnedUntil > now)).ThenByDescending(t => t.CreatedAt),
+            "hot" => query.OrderByDescending(t => t.IsPinned && (t.PinnedUntil == null || t.PinnedUntil > now)).ThenByDescending(t => t.ReplyCount * 30 + t.Views + t.LikeCount * 50),
+            "replies" => query.OrderByDescending(t => t.IsPinned && (t.PinnedUntil == null || t.PinnedUntil > now)).ThenByDescending(t => t.ReplyCount),
+            _ => query.OrderByDescending(t => t.IsPinned && (t.PinnedUntil == null || t.PinnedUntil > now)).ThenByDescending(t => t.LastReplyAt),
         };
         var items = await ordered
             .Skip((page - 1) * pageSize)
@@ -107,7 +114,7 @@ public class ThreadService
             lastNickByThread.TryGetValue(t.Id, out var lastNick);
             list.Add(new ThreadListItemDto(
                 t.Id, t.Title, NormalizeType(t.Type), t.Views, t.ReplyCount, t.LikeCount,
-                t.CreatedAt, t.LastReplyAt, t.Author.Nickname, t.Author.Level, ln, t.IsPinned, t.IsEssence,
+                t.CreatedAt, t.LastReplyAt, t.Author.Nickname, t.Author.Level, ln, t.IsEffectivelyPinned(), t.IsEssence,
                 t.Author.Avatar, lastNick ?? t.Author.Nickname, imageThreadIds.Contains(t.Id)));
         }
 
@@ -141,7 +148,10 @@ public class ThreadService
         thread.Views += 1;
         await _db.SaveChangesAsync();
         if (currentUserId.HasValue)
+        {
             await _retention.RecordHistoryAsync(currentUserId.Value, threadId);
+            await _community.BumpTaskAsync(currentUserId.Value, "browse");
+        }
 
         var type = NormalizeType(thread.Type);
         var purchased = false;
@@ -176,7 +186,7 @@ public class ThreadService
             thread.Id, thread.ForumId, thread.Forum.Name, thread.Title, type, thread.CoinPrice,
             thread.Views, thread.ReplyCount, thread.LikeCount, thread.CreatedAt,
             liked, favorited, Restricted: !canAccess, Purchased: purchased || thread.AuthorId == currentUserId,
-            thread.RepliesLocked, thread.IsPinned, thread.IsEssence, tags, authorDto, [], poll,
+            thread.RepliesLocked, thread.IsEffectivelyPinned(), thread.IsEssence, tags, authorDto, [], poll,
             canModerate, canEdit, tipCoins, tipCount), null);
     }
 
@@ -212,6 +222,12 @@ public class ThreadService
         var hideContent = !canAccess && type == TypeCoin && !purchased;
         var byId = items.ToDictionary(p => p.Id);
         var authorIds = items.Select(p => p.AuthorId).Distinct().ToList();
+        var blockedAuthors = new HashSet<int>();
+        if (currentUserId.HasValue)
+        {
+            var blocked = await _community.GetBlockedUserIdsAsync(currentUserId.Value);
+            blockedAuthors = blocked.Where(id => authorIds.Contains(id)).ToHashSet();
+        }
         var postCounts = await _db.Threads
             .Where(t => authorIds.Contains(t.AuthorId) && !t.IsHidden)
             .GroupBy(t => t.AuthorId)
@@ -225,7 +241,20 @@ public class ThreadService
 
         var list = new List<PostDto>();
         foreach (var p in items)
-            list.Add(await MapPostDtoAsync(p, hideContent, byId, postCounts, essenceCounts));
+        {
+            var dto = await MapPostDtoAsync(p, hideContent, byId, postCounts, essenceCounts);
+            if (blockedAuthors.Contains(p.AuthorId) && !p.IsDeleted)
+            {
+                dto = dto with
+                {
+                    Content = "",
+                    Images = [],
+                    AuthorBlocked = true,
+                    Hidden = true
+                };
+            }
+            list.Add(dto);
+        }
 
         return new PagedResult<PostDto>(list, total, page, pageSize);
     }
@@ -238,7 +267,7 @@ public class ThreadService
         var essence = essenceCount ?? await _db.Threads.CountAsync(t => t.AuthorId == u.Id && !t.IsHidden && t.IsEssence);
         return new AuthorBriefDto(
             u.Id, u.Nickname, u.Level, ln, u.Points, u.IsEffectivelyVip(), u.AvatarFrame,
-            u.Avatar, count, u.CreatedAt, essence);
+            u.Avatar, count, u.CreatedAt, essence, u.Signature);
     }
 
     private async Task<PostDto> MapPostDtoAsync(
@@ -322,11 +351,20 @@ public class ThreadService
         if (content.Length < 2 && images!.Count == 0)
             return (null, "内容不能为空");
 
+        var (filteredTitle, filteredContent, filterResult) = await _filter.FilterThreadAsync(user, title, content);
+        if (filterResult.BlockError != null) return (null, filterResult.BlockError);
+        title = filteredTitle;
+        content = filteredContent;
+
         var forum = await _db.Forums.FindAsync(req.ForumId);
         if (forum == null) return (null, "版块不存在");
         if (!VipAccess.CanAccessForum(user, forum.MinVipTier))
             return (null, VipAccess.AccessDeniedMessage(forum.MinVipTier));
 
+        var requireReview = await _settings.GetBoolAsync("require_review");
+        var exemptLevel = await _settings.GetIntAsync("review_exempt_min_level", 4);
+        var exempt = user.IsAdmin || user.Level >= exemptLevel;
+        var pending = !exempt && (requireReview || filterResult.ForceReview);
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
@@ -340,7 +378,7 @@ public class ThreadService
                 CoinPrice = coinPrice,
                 CreatedAt = now,
                 LastReplyAt = now,
-                PendingReview = await _settings.GetBoolAsync("require_review") && !user.IsAdmin
+                PendingReview = pending
             };
             _db.Threads.Add(thread);
             await _db.SaveChangesAsync();
@@ -358,6 +396,7 @@ public class ThreadService
 
             forum.ThreadCount += 1;
             forum.PostCount += 1;
+            user.LastActiveAt = now;
 
             var threadPts = await _settings.GetIntAsync("points_per_thread", 10);
             if (threadPts > 0)
@@ -367,7 +406,7 @@ public class ThreadService
 
             await _community.AttachTagsAsync(thread.Id, req.Tags);
             if (type == TypePoll)
-                await _community.CreatePollAsync(thread.Id, req.PollOptions);
+                await _community.CreatePollAsync(thread.Id, req.PollOptions, req.PollEndsAt, req.PollAllowMulti);
 
             await _retention.NotifyForumSubscribersAsync(forum.Id, user.Id, user.Nickname, thread.Id, thread.Title);
             await _retention.DeleteDraftByForumAsync(userId, forum.Id);
@@ -380,6 +419,7 @@ public class ThreadService
             }
             await _db.SaveChangesAsync();
 
+            await _community.BumpTaskAsync(userId, "post");
             return await GetThreadAsync(thread.Id, userId);
         }
         catch
@@ -401,6 +441,10 @@ public class ThreadService
         if (imgError != null) return (null, imgError);
         if (images!.Count == 0 && content.Length < MinReplyLength)
             return (null, $"回帖内容至少 {MinReplyLength} 个字");
+
+        var (filteredContent, filterResult) = await _filter.FilterReplyAsync(user, content);
+        if (filterResult.BlockError != null) return (null, filterResult.BlockError);
+        content = filteredContent;
 
         var thread = await _db.Threads.Include(t => t.Forum).FirstOrDefaultAsync(t => t.Id == threadId);
         if (thread == null) return (null, "帖子不存在");
@@ -472,6 +516,7 @@ public class ThreadService
             thread.ReplyCount += 1;
             thread.LastReplyAt = ChinaTime.Now;
             thread.Forum.PostCount += 1;
+            user.LastActiveAt = ChinaTime.Now;
 
             // 阶梯奖励：当日回帖次数越多，单次收益递减；基数来自站点设置
             var todayReplyCount = await _db.PointLedgers
@@ -496,6 +541,8 @@ public class ThreadService
             {
                 pts = Math.Max(basePts / 2, 1);
             }
+
+            pts = await _settings.ApplyPointsEventAsync(pts);
 
             if (pts > 0)
             {
@@ -662,6 +709,7 @@ public class ThreadService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         await _community.BumpTaskAsync(userId, "like");
+        await _community.TryAwardProgressBadgesAsync(thread.AuthorId);
         return ("点赞成功", null);
     }
 
@@ -961,6 +1009,75 @@ public class ThreadService
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    public async Task<(PaidPinResultDto? Result, string? Error)> PaidPinAsync(int userId, int threadId)
+    {
+        if (!await _settings.GetBoolAsync("paid_pin_enabled", true))
+            return (null, "付费置顶暂未开放");
+
+        var cost = Math.Max(1, await _settings.GetIntAsync("paid_pin_cost_coins", 20));
+        var hours = Math.Clamp(await _settings.GetIntAsync("paid_pin_hours", 24), 1, 168);
+
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return (null, "用户不存在");
+        if (user.IsEffectivelyMuted()) return (null, "账号已被禁言");
+
+        var thread = await _db.Threads.FirstOrDefaultAsync(t => t.Id == threadId);
+        if (thread == null) return (null, "帖子不存在");
+        if (thread.AuthorId != userId) return (null, "只能置顶自己的帖子");
+        if (thread.IsHidden || thread.PendingReview) return (null, "帖子当前不可置顶");
+        if (thread.IsEffectivelyPinned() && thread.PinnedUntil == null)
+            return (null, "帖子已由管理置顶，无需付费");
+
+        if (user.Coins < cost) return (null, $"金币不足，需要 {cost} 金币");
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            user.Coins -= cost;
+            user.LastActiveAt = ChinaTime.Now;
+            var until = ChinaTime.Now.AddHours(hours);
+            // 若已有付费置顶未过期，在原到期时间上续期
+            if (thread.IsEffectivelyPinned() && thread.PinnedUntil.HasValue && thread.PinnedUntil > ChinaTime.Now)
+                until = thread.PinnedUntil.Value.AddHours(hours);
+
+            thread.IsPinned = true;
+            thread.PinnedUntil = until;
+
+            _db.CoinLedgers.Add(new CoinLedger
+            {
+                UserId = user.Id,
+                Delta = -cost,
+                Reason = "paid_pin",
+                RefType = "thread",
+                RefId = thread.Id
+            });
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return (new PaidPinResultDto($"置顶成功，有效至 {until:yyyy-MM-dd HH:mm}", user.Coins, until), null);
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    private async Task ClearExpiredPinsAsync(int forumId)
+    {
+        var now = ChinaTime.Now;
+        var expired = await _db.Threads
+            .Where(t => t.ForumId == forumId && t.IsPinned && t.PinnedUntil != null && t.PinnedUntil <= now)
+            .ToListAsync();
+        if (expired.Count == 0) return;
+        foreach (var t in expired)
+        {
+            t.IsPinned = false;
+            t.PinnedUntil = null;
+        }
+        await _db.SaveChangesAsync();
     }
 
     private async Task<string?> EnsureCanInteractAsync(ForumThread thread, int userId)

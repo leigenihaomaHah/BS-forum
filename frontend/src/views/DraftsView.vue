@@ -24,8 +24,10 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '../components/AppLayout.vue'
 import api from '../api/http'
+import { useDialogStore } from '../stores/dialog'
 import { timeAgo } from '../utils/time.js'
 
+const dialog = useDialogStore()
 const items = ref([])
 const loading = ref(false)
 
@@ -38,7 +40,7 @@ async function load() {
 }
 
 async function remove(id) {
-  if (!confirm('删除该草稿？')) return
+  if (!(await dialog.confirm('删除该草稿？', { danger: true, confirmText: '删除' }))) return
   await api.delete(`/me/drafts/${id}`)
   await load()
 }

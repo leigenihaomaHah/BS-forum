@@ -2,9 +2,21 @@
   <div class="admin-page">
     <div class="page-header">
       <h2 class="page-title">审核队列</h2>
-      <button class="admin-btn admin-btn-primary" :disabled="loading" @click="load">
-        {{ loading ? '刷新中…' : '刷新' }}
-      </button>
+      <div class="d-flex gap-2">
+        <button
+          class="admin-btn admin-btn-primary"
+          :disabled="!selectedThreadIds.length || batching"
+          @click="batchApprove"
+        >批量通过{{ selectedThreadIds.length ? ` (${selectedThreadIds.length})` : '' }}</button>
+        <button
+          class="admin-btn admin-btn-outline"
+          :disabled="!selectedThreadIds.length || batching"
+          @click="batchReject"
+        >批量驳回</button>
+        <button class="admin-btn admin-btn-primary" :disabled="loading" @click="load">
+          {{ loading ? '刷新中…' : '刷新' }}
+        </button>
+      </div>
     </div>
 
     <div class="summary-row">
@@ -29,6 +41,9 @@
       <table class="admin-table">
         <thead>
           <tr>
+            <th style="width:36px">
+              <input type="checkbox" :checked="allThreadsSelected" @change="toggleSelectAll" title="全选待审帖" />
+            </th>
             <th>类型</th>
             <th>内容</th>
             <th>等待</th>
@@ -38,6 +53,14 @@
         </thead>
         <tbody>
           <tr v-for="item in queueItems" :key="item.key">
+            <td>
+              <input
+                v-if="item.type === 'thread'"
+                type="checkbox"
+                :value="item.id"
+                v-model="selectedThreadIds"
+              />
+            </td>
             <td><span class="type-tag" :class="item.type">{{ item.typeLabel }}</span></td>
             <td>
               <div class="item-title">{{ item.title }}</div>
@@ -75,15 +98,29 @@
 import { computed, onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 const loading = ref(false)
+const batching = ref(false)
+const selectedThreadIds = ref([])
 const pendingThreads = ref([])
 const pendingReports = ref([])
 const pendingOrders = ref([])
 const threadTotal = ref(0)
 const reportTotal = ref(0)
 const orderTotal = ref(0)
+
+const allThreadsSelected = computed(() => {
+  const ids = pendingThreads.value.map((t) => t.id)
+  return ids.length > 0 && ids.every((id) => selectedThreadIds.value.includes(id))
+})
+
+function toggleSelectAll(e) {
+  if (e.target.checked) selectedThreadIds.value = pendingThreads.value.map((t) => t.id)
+  else selectedThreadIds.value = []
+}
 
 function waitInfo(iso) {
   if (!iso) return { hours: 0, text: '-' }
@@ -165,11 +202,43 @@ async function load() {
     reportTotal.value = rp.data?.total || pendingReports.value.length
     pendingOrders.value = od.data?.items || []
     orderTotal.value = od.data?.total || pendingOrders.value.length
+    selectedThreadIds.value = selectedThreadIds.value.filter((id) =>
+      pendingThreads.value.some((t) => t.id === id))
   } catch (e) {
     toast.error(e.message || '加载失败')
   } finally {
     loading.value = false
   }
+}
+
+async function batchApprove() {
+  if (!selectedThreadIds.value.length) return
+  if (!(await dialog.confirm(`确认批量通过 ${selectedThreadIds.value.length} 条待审帖？`))) return
+  batching.value = true
+  try {
+    const { data } = await api.post('/admin/threads/batch-approve', { ids: selectedThreadIds.value })
+    toast.success(data.message || '批量通过完成')
+    selectedThreadIds.value = []
+    await load()
+  } catch (e) { toast.error(e.message) }
+  finally { batching.value = false }
+}
+
+async function batchReject() {
+  if (!selectedThreadIds.value.length) return
+  const reason = await dialog.prompt('批量驳回原因（可选）')
+  if (reason === null) return
+  batching.value = true
+  try {
+    const { data } = await api.post('/admin/threads/batch-reject', {
+      ids: selectedThreadIds.value,
+      reason: reason || null,
+    })
+    toast.success(data.message || '批量驳回完成')
+    selectedThreadIds.value = []
+    await load()
+  } catch (e) { toast.error(e.message) }
+  finally { batching.value = false }
 }
 
 async function approveThread(item) {
@@ -181,7 +250,7 @@ async function approveThread(item) {
 }
 
 async function rejectThread(item) {
-  const reason = prompt('驳回原因（可选）')
+  const reason = await dialog.prompt('驳回原因（可选）')
   if (reason === null) return
   try {
     await api.post(`/admin/threads/${item.id}/reject`, { reason: reason || null })
@@ -191,7 +260,7 @@ async function rejectThread(item) {
 }
 
 async function handleReport(item, action) {
-  const note = prompt(action === 'resolve' ? '处理备注（可选）' : '驳回原因（可选）')
+  const note = await dialog.prompt(action === 'resolve' ? '处理备注（可选）' : '驳回原因（可选）')
   if (note === null) return
   try {
     await api.post(`/admin/reports/${item.id}/handle`, { action, note: note || null })
@@ -202,7 +271,7 @@ async function handleReport(item, action) {
 
 async function confirmOrder(item) {
   const o = item.raw
-  if (!confirm(`确认收到 ¥${o.priceYuan}？将为「${o.nickname}」开通「${o.packageName}」。`)) return
+  if (!(await dialog.confirm(`确认收到 ¥${o.priceYuan}？将为「${o.nickname}」开通「${o.packageName}」。`))) return
   try {
     const { data } = await api.post(`/admin/recharge/orders/${o.id}/confirm`, { reason: 'queue_confirm' })
     toast.success(data.message || '已确认并开通')
@@ -211,7 +280,7 @@ async function confirmOrder(item) {
 }
 
 async function cancelOrder(item) {
-  if (!confirm('取消该开通申请？')) return
+  if (!(await dialog.confirm('取消该开通申请？', { danger: true, confirmText: '取消' }))) return
   try {
     await api.post(`/admin/recharge/orders/${item.id}/cancel`)
     toast.success('已取消')

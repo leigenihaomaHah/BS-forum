@@ -50,6 +50,32 @@ public class SiteSettingsService
         return int.TryParse(v, out var n) ? n : defaultValue;
     }
 
+    /// <summary>活动时间窗内的积分倍数；未开启或未到窗口则返回 1。</summary>
+    public async Task<(bool Active, int Multiplier, string Name)> GetPointsEventAsync()
+    {
+        if (!await GetBoolAsync("points_event_enabled"))
+            return (false, 1, "");
+        var mult = Math.Clamp(await GetIntAsync("points_event_multiplier", 2), 1, 10);
+        var name = await GetAsync("points_event_name", "限时双倍积分");
+        var startRaw = await GetAsync("points_event_start");
+        var endRaw = await GetAsync("points_event_end");
+        var now = ChinaTime.Now;
+        if (!string.IsNullOrWhiteSpace(startRaw) &&
+            DateTime.TryParse(startRaw, out var start) && now < start)
+            return (false, 1, name);
+        if (!string.IsNullOrWhiteSpace(endRaw) &&
+            DateTime.TryParse(endRaw, out var end) && now > end)
+            return (false, 1, name);
+        return (mult > 1, mult, name);
+    }
+
+    public async Task<int> ApplyPointsEventAsync(int points)
+    {
+        if (points <= 0) return points;
+        var (active, mult, _) = await GetPointsEventAsync();
+        return active && mult > 1 ? points * mult : points;
+    }
+
     public async Task EnsureDefaultsAsync()
     {
         var defaults = new Dictionary<string, string>
@@ -71,6 +97,16 @@ public class SiteSettingsService
             ["lottery_cost_coins"] = "5",
             ["lottery_daily_limit"] = "10",
             ["lottery_pity"] = "10",
+            ["review_exempt_min_level"] = "4",
+            ["sensitive_hit_action"] = "mask_review",
+            ["points_event_enabled"] = "0",
+            ["points_event_multiplier"] = "2",
+            ["points_event_start"] = "",
+            ["points_event_end"] = "",
+            ["points_event_name"] = "限时双倍积分",
+            ["paid_pin_enabled"] = "1",
+            ["paid_pin_cost_coins"] = "20",
+            ["paid_pin_hours"] = "24",
         };
         var existing = await _db.SiteSettings.Select(s => s.Key).ToListAsync();
         var missing = defaults.Where(kv => !existing.Contains(kv.Key)).ToList();

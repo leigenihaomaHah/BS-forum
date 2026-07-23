@@ -90,9 +90,11 @@
 import { onMounted, ref } from 'vue'
 import api from '../../api/http'
 import { useToastStore } from '../../stores/toast'
+import { useDialogStore } from '../../stores/dialog'
 import { compressImage } from '../../utils/image.js'
 
 const toast = useToastStore()
+const dialog = useDialogStore()
 
 const items = ref([])
 const editing = ref(null)
@@ -180,7 +182,7 @@ async function save() {
 }
 
 async function remove(b) {
-  if (!confirm(`删除广告「${b.title}」？`)) return
+  if (!(await dialog.confirm(`删除广告「${b.title}」？`, { danger: true, confirmText: '删除' }))) return
   try {
     await api.delete(`/admin/banners/${b.id}`)
     await load()

@@ -44,6 +44,7 @@ public class AppDbContext : DbContext
     public DbSet<RechargeCard> RechargeCards => Set<RechargeCard>();
     public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
     public DbSet<PrivateMessage> PrivateMessages => Set<PrivateMessage>();
+    public DbSet<SensitiveWord> SensitiveWords => Set<SensitiveWord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -48,6 +48,21 @@
               </div>
 
               <div class="mb-3">
+                <label class="form-label">个性签名</label>
+                <textarea v-model="form.signature" class="form-control" maxlength="200" rows="2" placeholder="最多 200 字，显示在个人主页和帖子下方"></textarea>
+                <div class="text-muted" style="font-size: 12px; margin-top: 4px">{{ form.signature.length }}/200</div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">主题外观</label>
+                <select v-model="form.themePreference" class="form-control" style="max-width:200px">
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                  <option value="system">跟随系统</option>
+                </select>
+              </div>
+
+              <div class="mb-3">
                 <label class="form-label">新密码</label>
                 <input v-model="form.password" type="password" class="form-control" maxlength="32" placeholder="留空则不修改密码" autocomplete="new-password" />
                 <div class="text-muted" style="font-size: 12px; margin-top: 4px">8–32 位，需含字母和数字；不修改请留空</div>
@@ -124,6 +139,8 @@ const form = ref({
   nickname: '',
   password: '',
   email: '',
+  signature: '',
+  themePreference: 'light',
   showPurchases: false,
   showFavorites: false,
   notifyReply: true,
@@ -155,6 +172,8 @@ onMounted(() => {
   if (auth.user) {
     form.value.nickname = auth.user.nickname
     form.value.email = auth.user.email || ''
+    form.value.signature = auth.user.signature || ''
+    form.value.themePreference = auth.user.themePreference || 'light'
     form.value.showPurchases = !!auth.user.showPurchases
     form.value.showFavorites = !!auth.user.showFavorites
     form.value.notifyReply = auth.user.notifyReply !== false
@@ -193,6 +212,8 @@ async function save() {
     const body = {
       nickname: form.value.nickname,
       email: form.value.email || null,
+      signature: form.value.signature || null,
+      themePreference: form.value.themePreference,
       showPurchases: form.value.showPurchases,
       showFavorites: form.value.showFavorites,
       notifyReply: form.value.notifyReply,

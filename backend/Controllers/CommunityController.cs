@@ -69,6 +69,24 @@ public class CommunityController : ControllerBase
         return Ok(await _community.GetBlockedUsersAsync(uid.Value));
     }
 
+    [HttpGet("users/{id:int}/followers")]
+    [AllowAnonymous]
+    public async Task<ActionResult<PagedResult<FollowUserItemDto>>> Followers(
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var viewer = JwtHelper.GetUserId(User);
+        return Ok(await _community.GetFollowersAsync(id, viewer, page, pageSize));
+    }
+
+    [HttpGet("users/{id:int}/following")]
+    [AllowAnonymous]
+    public async Task<ActionResult<PagedResult<FollowUserItemDto>>> Following(
+        int id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var viewer = JwtHelper.GetUserId(User);
+        return Ok(await _community.GetFollowingAsync(id, viewer, page, pageSize));
+    }
+
     [HttpGet("feed")]
     [Authorize]
     public async Task<ActionResult<PagedResult<FeedItemDto>>> Feed(

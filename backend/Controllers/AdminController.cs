@@ -31,6 +31,19 @@ public class AdminController : ControllerBase
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] bool? muted = null)
         => Ok(await _admin.GetUsersAsync(page, pageSize, search, muted));
 
+    [HttpGet("users/silent")]
+    public async Task<ActionResult<PagedResult<SilentUserDto>>> SilentUsers(
+        [FromQuery] int days = 7, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        => Ok(await _admin.GetSilentUsersAsync(days, page, pageSize));
+
+    [HttpPost("users/recall")]
+    public async Task<ActionResult<BatchResultDto>> RecallUsers([FromBody] RecallUsersRequest req)
+    {
+        var (result, error) = await _admin.RecallUsersAsync(req.Ids, req.Content);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
     [HttpPut("users/{id:int}")]
     public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateAdminUserRequest req)
     {
@@ -200,6 +213,56 @@ public class AdminController : ControllerBase
         var (ok, error) = await _admin.RejectThreadReviewAsync(uid.Value, id, req?.Reason);
         if (!ok) return BadRequest(new ApiMessage(error!));
         return Ok(new ApiMessage("已驳回"));
+    }
+
+    [HttpPost("threads/batch-approve")]
+    public async Task<ActionResult<BatchResultDto>> BatchApprove([FromBody] BatchIdsRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        if (req.Ids == null || req.Ids.Count == 0) return BadRequest(new ApiMessage("请选择帖子"));
+        return Ok(await _admin.BatchApproveThreadReviewAsync(uid.Value, req.Ids));
+    }
+
+    [HttpPost("threads/batch-reject")]
+    public async Task<ActionResult<BatchResultDto>> BatchReject([FromBody] BatchIdsRequest req)
+    {
+        var uid = JwtHelper.GetUserId(User);
+        if (uid == null) return Unauthorized();
+        if (req.Ids == null || req.Ids.Count == 0) return BadRequest(new ApiMessage("请选择帖子"));
+        return Ok(await _admin.BatchRejectThreadReviewAsync(uid.Value, req.Ids, req.Reason));
+    }
+
+    [HttpGet("sensitive-words")]
+    public async Task<ActionResult<PagedResult<SensitiveWordDto>>> SensitiveWords(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? q = null,
+        [FromServices] ContentFilterService filter = null!)
+        => Ok(await filter.ListAsync(page, pageSize, q));
+
+    [HttpPost("sensitive-words")]
+    public async Task<ActionResult<SensitiveWordDto>> CreateSensitiveWord(
+        [FromBody] SaveSensitiveWordRequest req, [FromServices] ContentFilterService filter)
+    {
+        var (result, error) = await filter.CreateAsync(req);
+        if (error != null) return BadRequest(new ApiMessage(error));
+        return Ok(result);
+    }
+
+    [HttpPut("sensitive-words/{id:int}")]
+    public async Task<IActionResult> UpdateSensitiveWord(
+        int id, [FromBody] SaveSensitiveWordRequest req, [FromServices] ContentFilterService filter)
+    {
+        var (ok, error) = await filter.UpdateAsync(id, req);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已更新"));
+    }
+
+    [HttpDelete("sensitive-words/{id:int}")]
+    public async Task<IActionResult> DeleteSensitiveWord(int id, [FromServices] ContentFilterService filter)
+    {
+        var (ok, error) = await filter.DeleteAsync(id);
+        if (!ok) return BadRequest(new ApiMessage(error!));
+        return Ok(new ApiMessage("已删除"));
     }
 
     [HttpPost("threads/{id:int}/move")]

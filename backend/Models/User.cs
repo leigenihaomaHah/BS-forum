@@ -11,6 +11,8 @@ public class User
     public int Coins { get; set; }
     public int Level { get; set; } = 1;
     public DateTime? LastSignInDate { get; set; }
+    /// <summary>最近活跃（登录/发帖/回帖等），用于沉默用户运营。</summary>
+    public DateTime? LastActiveAt { get; set; }
     public int ConsecutiveSignInDays { get; set; }
     public DateTime CreatedAt { get; set; } = ChinaTime.Now;
     public bool IsAdmin { get; set; }
@@ -34,6 +36,10 @@ public class User
     public bool NotifyReply { get; set; } = true;
     /// <summary>被 @ 通知。</summary>
     public bool NotifyMention { get; set; } = true;
+    /// <summary>帖子楼层签名档，最多 200 字。</summary>
+    public string? Signature { get; set; }
+    /// <summary>主题：light | dark | system</summary>
+    public string ThemePreference { get; set; } = "light";
 
     public ICollection<ForumThread> Threads { get; set; } = new List<ForumThread>();
     public ICollection<Post> Posts { get; set; } = new List<Post>();

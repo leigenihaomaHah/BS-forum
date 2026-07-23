@@ -8,14 +8,16 @@ public class HotService
 {
     private readonly AppDbContext _db;
     private readonly LevelService _levels;
+    private readonly CommunityService _community;
 
-    public HotService(AppDbContext db, LevelService levels)
+    public HotService(AppDbContext db, LevelService levels, CommunityService community)
     {
         _db = db;
         _levels = levels;
+        _community = community;
     }
 
-    public async Task<List<HotThreadDto>> GetHotAsync(string period)
+    public async Task<List<HotThreadDto>> GetHotAsync(string period, int? viewerId = null)
     {
         var now = ChinaTime.Now;
         var start = period.ToLowerInvariant() switch
@@ -25,11 +27,17 @@ public class HotService
             _ => ChinaTime.Today
         };
 
-        var threads = await _db.Threads
+        var query = _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Where(t => t.CreatedAt >= start && !t.IsHidden && !t.PendingReview)
-            .ToListAsync();
+            .Where(t => t.CreatedAt >= start && !t.IsHidden && !t.PendingReview);
+        if (viewerId.HasValue)
+        {
+            var blocked = await _community.GetBlockedUserIdsAsync(viewerId.Value);
+            if (blocked.Count > 0)
+                query = query.Where(t => !blocked.Contains(t.AuthorId));
+        }
+        var threads = await query.ToListAsync();
 
         var scored = threads.Select(t =>
         {
@@ -39,7 +47,7 @@ public class HotService
             return (t, heat);
         })
         .OrderByDescending(x => x.heat)
-        .Take(20)
+        .Take(10)
         .ToList();
 
         var result = new List<HotThreadDto>();
@@ -56,13 +64,20 @@ public class HotService
         return result;
     }
 
-    public async Task<List<EssenceThreadDto>> GetEssenceAsync(int take = 10)
+    public async Task<List<EssenceThreadDto>> GetEssenceAsync(int take = 10, int? viewerId = null)
     {
         take = Math.Clamp(take, 1, 30);
-        var threads = await _db.Threads
+        var query = _db.Threads
             .Include(t => t.Author)
             .Include(t => t.Forum)
-            .Where(t => t.IsEssence && !t.IsHidden && !t.PendingReview)
+            .Where(t => t.IsEssence && !t.IsHidden && !t.PendingReview);
+        if (viewerId.HasValue)
+        {
+            var blocked = await _community.GetBlockedUserIdsAsync(viewerId.Value);
+            if (blocked.Count > 0)
+                query = query.Where(t => !blocked.Contains(t.AuthorId));
+        }
+        var threads = await query
             .OrderByDescending(t => t.LastReplyAt)
             .Take(take)
             .ToListAsync();
