@@ -560,23 +560,38 @@ watch(() => route.params.id, load)
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 18px;
   border-bottom: 1px solid rgba(20,32,51,0.08);
   transition: background 0.15s;
+  max-width: 100%;
+  overflow: hidden;
 }
 .purchase-row:last-child { border-bottom: none; }
 .purchase-row:hover { background: #f8fafc; }
+.purchase-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
 .purchase-title {
+  display: block;
   font-size: 14px;
   font-weight: 600;
   color: var(--ink, #142033);
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .purchase-title:hover { color: var(--accent, #0d9488); }
 .purchase-meta {
   font-size: 11px;
   color: #7a869c;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .purchase-cost {
   font-size: 14px;
@@ -622,6 +637,8 @@ watch(() => route.params.id, load)
   text-decoration: none;
   color: inherit;
   transition: background 0.15s;
+  max-width: 100%;
+  overflow: hidden;
 }
 .profile-reply-item:hover {
   background: rgba(13, 148, 136, 0.03);
@@ -667,7 +684,9 @@ watch(() => route.params.id, load)
   font-size: 14px;
   line-height: 1.7;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  max-width: 100%;
 }
 .profile-reply-thread {
   margin-top: 8px;
@@ -676,6 +695,7 @@ watch(() => route.params.id, load)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 .profile-reply-item:hover .profile-reply-thread {
   color: #0d9488;

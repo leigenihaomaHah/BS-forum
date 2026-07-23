@@ -26,6 +26,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   color: var(--ink);
   font-family: var(--font-body);
   font-size: 15px;
@@ -48,11 +49,13 @@ a:hover {
 }
 
 .forum-wrap {
-  max-width: 1360px;
+  max-width: min(1360px, 100%);
   margin: 0 auto;
   padding: 20px 20px 40px;
   min-height: 100vh;
   animation: pageIn 0.45s ease both;
+  overflow-x: clip;
+  box-sizing: border-box;
 }
 
 @keyframes pageIn {

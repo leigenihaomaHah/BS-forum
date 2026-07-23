@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "H2hOLg0+YGk=",
+  "dgSpecHash": "f8kzYdYdnWw=",
   "success": true,
-  "projectFilePath": "D:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
+  "projectFilePath": "d:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\VIP\\.nuget\\packages\\microsoft.data.sqlite\\8.0.11\\microsoft.data.sqlite.8.0.11.nupkg.sha512",
     "C:\\Users\\VIP\\.nuget\\packages\\microsoft.data.sqlite.core\\8.0.11\\microsoft.data.sqlite.core.8.0.11.nupkg.sha512",

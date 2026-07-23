@@ -80,26 +80,17 @@
             </div>
           </div>
 
-          <div class="user-menu-wrap">
-            <button type="button" class="user-menu-trigger" @click.stop="toggleUserMenu">
+          <div class="user-inline">
+            <router-link :to="`/user/${auth.user.id}`" class="user-inline-profile" :title="auth.user.nickname">
               <span class="avatar-frame" :class="'frame-' + (auth.user.avatarFrame || '')">
                 <img :src="auth.user.avatar || defaultAvatar(auth.user.nickname)" class="header-avatar" alt="" />
               </span>
               <span class="user-menu-name">{{ auth.user.nickname }}</span>
-              <span class="user-menu-caret">▾</span>
-            </button>
-            <div v-if="showUserMenu" class="user-menu-dropdown" @click.stop>
-              <button type="button" class="user-menu-item" @click="goMenu(`/user/${auth.user.id}`)">我的主页</button>
-              <button type="button" class="user-menu-item" @click="goMenu('/me')">个人中心</button>
-              <button type="button" class="user-menu-item" @click="goMenu('/settings')">账号设置</button>
-              <button
-                v-if="isAdmin"
-                type="button"
-                class="user-menu-item admin"
-                @click="goMenu('/admin')"
-              >管理后台</button>
-              <button type="button" class="user-menu-item danger" @click="logoutMenu">退出登录</button>
-            </div>
+            </router-link>
+            <router-link to="/me" class="user-inline-link">个人中心</router-link>
+            <router-link to="/settings" class="user-inline-link">账号设置</router-link>
+            <router-link v-if="isAdmin" to="/admin" class="user-inline-link admin">管理后台</router-link>
+            <a href="#" class="user-inline-link danger" @click.prevent="logoutMenu">退出</a>
           </div>
         </div>
         <div v-else class="user-assets">
@@ -170,24 +161,10 @@ const authModal = useAuthModalStore()
 const searchQuery = ref('')
 const navCategories = ref([])
 const isAdmin = computed(() => isAdminUser(auth.user))
-const showUserMenu = ref(false)
 const showUtilMenu = ref(false)
 let themeMedia = null
 
-function toggleUserMenu() {
-  showUserMenu.value = !showUserMenu.value
-  if (showUserMenu.value) {
-    showNotif.value = false
-  }
-}
-
-function goMenu(path) {
-  showUserMenu.value = false
-  router.push(path)
-}
-
 function logoutMenu() {
-  showUserMenu.value = false
   auth.logout()
   router.push('/')
 }
@@ -243,7 +220,6 @@ async function loadNotifications() {
 async function toggleNotif() {
   showNotif.value = !showNotif.value
   if (showNotif.value) {
-    showUserMenu.value = false
     notifLoading.value = true
     await loadNotifications()
     notifLoading.value = false
@@ -285,7 +261,6 @@ function startNotifPolling() {
 
 function closeOverlays(e) {
   if (!e.target.closest('.notif-wrapper')) showNotif.value = false
-  if (!e.target.closest('.user-menu-wrap')) showUserMenu.value = false
   if (!e.target.closest('.util-bar')) showUtilMenu.value = false
 }
 
@@ -351,57 +326,49 @@ function doSearch() {
   object-fit: cover;
   display: block;
 }
-.user-menu-wrap { position: relative; z-index: 40; }
-.user-menu-trigger {
+.user-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.user-inline-profile {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: none;
-  background: transparent;
-  padding: 2px 4px;
-  cursor: pointer;
+  margin-right: 4px;
+  text-decoration: none;
   color: var(--ink-soft);
   font-size: 13px;
   font-weight: 600;
 }
+.user-inline-profile:hover { color: var(--ink, #142033); }
 .user-menu-name {
   max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.user-menu-caret { font-size: 10px; opacity: 0.7; }
-.user-menu-dropdown {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  width: 200px;
-  background: #fff;
-  border: 1px solid rgba(20, 32, 51, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(20, 32, 51, 0.16);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 50;
-}
-.user-menu-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: transparent;
-  padding: 8px 10px;
-  border-radius: 8px;
-  color: #142033;
+.user-inline-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  font-weight: 600;
+  color: #7a869c;
+  text-decoration: none;
+  border-radius: 6px;
+  white-space: nowrap;
 }
-.user-menu-item:hover { background: #f8fafc; }
-.user-menu-item.admin { color: #a16207; font-weight: 700; }
-.user-menu-item.danger { color: #be123c; }
+.user-inline-link:hover {
+  color: #142033;
+  background: rgba(15, 23, 42, 0.04);
+}
+.user-inline-link.admin { color: #a16207; }
+.user-inline-link.admin:hover { color: #854d0e; background: rgba(161, 98, 7, 0.08); }
+.user-inline-link.danger { color: #be123c; }
+.user-inline-link.danger:hover { color: #9f1239; background: rgba(190, 18, 60, 0.06); }
 .next-level-hint {
   display: inline-flex;
   flex-direction: column;
@@ -566,6 +533,8 @@ function doSearch() {
   }
   .util-mid.open { display: flex; }
   .util-bar { position: relative; }
+  .user-inline-link { padding: 2px 6px; font-size: 12px; }
+  .user-menu-name { display: none; }
 }
 
 :global([data-theme=dark]) {
@@ -585,12 +554,13 @@ function doSearch() {
   background: var(--surface-solid);
   color: var(--ink);
 }
-:global([data-theme=dark]) .user-menu-dropdown,
 :global([data-theme=dark]) .notif-dropdown {
   background: var(--surface-solid);
   border-color: var(--line);
   color: var(--ink);
 }
-:global([data-theme=dark]) .user-menu-item { color: var(--ink); }
-:global([data-theme=dark]) .user-menu-item:hover { background: rgba(255,255,255,0.06); }
+:global([data-theme=dark]) .user-inline-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
 </style>

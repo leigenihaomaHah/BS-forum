@@ -16,9 +16,11 @@ const html = computed(() => renderMarkdown(props.content))
 <style>
 .md-body {
   line-height: 1.75;
+  overflow-wrap: anywhere;
   word-break: break-word;
   color: #142033;
   font-size: 14px;
+  max-width: 100%;
 }
 .md-body > :first-child { margin-top: 0; }
 .md-body > :last-child { margin-bottom: 0; }

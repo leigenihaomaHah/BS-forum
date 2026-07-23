@@ -172,9 +172,26 @@ onMounted(async () => {
 .search-item {
   padding: 14px 16px;
   border-bottom: 1px solid var(--line, #f1f5f9);
+  max-width: 100%;
+  overflow: hidden;
 }
-.search-title { font-weight: 600; margin-bottom: 4px; }
-.search-snippet { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+.search-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-snippet {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .search-meta { font-size: 12px; color: #94a3b8; }
 .sep { margin: 0 4px; }
 :deep(mark.hl) {

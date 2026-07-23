@@ -1,4 +1,5 @@
 D:\BS\BS\publish\tools\DbSchemaMigrate.exe
+D:\BS\BS\publish\tools\migrate.config.json
 D:\BS\BS\publish\tools\schema-ensure.json
 D:\BS\BS\publish\tools\DbSchemaMigrate.dll
 D:\BS\BS\publish\tools\DbSchemaMigrate.deps.json

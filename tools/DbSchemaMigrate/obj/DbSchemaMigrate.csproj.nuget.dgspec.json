@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj": {}
+    "d:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj": {}
   },
   "projects": {
-    "D:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj": {
+    "d:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
+        "projectUniqueName": "d:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
         "projectName": "DbSchemaMigrate",
-        "projectPath": "D:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
+        "projectPath": "d:\\BS\\BS\\tools\\DbSchemaMigrate\\DbSchemaMigrate.csproj",
         "packagesPath": "C:\\Users\\VIP\\.nuget\\packages\\",
-        "outputPath": "D:\\BS\\BS\\tools\\DbSchemaMigrate\\obj\\",
+        "outputPath": "d:\\BS\\BS\\tools\\DbSchemaMigrate\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

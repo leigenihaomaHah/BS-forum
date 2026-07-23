@@ -61,8 +61,10 @@ if (HasFlag(args, "-h") || HasFlag(args, "--help"))
             "schemaPath": ""
           }
 
-        也可临时覆盖:
-          DbSchemaMigrate.exe --db <路径> [--nopause]
+        常用:
+          DbSchemaMigrate.exe --db <路径> --nopause
+          DbSchemaMigrate.exe --db <路径> --fix-pinned --nopause
+            （只补 Threads.PinnedUntil / Users.LastActiveAt，无需其它工具）
         """);
     return Exit(0);
 }
@@ -103,7 +105,15 @@ Console.WriteLine("========================================");
 Console.WriteLine($"配置文件: {configPath}");
 Console.WriteLine($"库文件:   {dbPath}");
 Console.WriteLine($"清单文件: {schemaPath}");
-Console.WriteLine($"库存在:   {(File.Exists(dbPath) ? "是" : "否（将创建）")}");
+if (File.Exists(dbPath))
+{
+    var fi = new FileInfo(dbPath);
+    Console.WriteLine($"库存在:   是  大小={fi.Length} 字节  修改={fi.LastWriteTime:yyyy-MM-dd HH:mm:ss}");
+}
+else
+{
+    Console.WriteLine("库存在:   否（将创建空库 —— 若你本意是刷线上业务库，说明路径错了！）");
+}
 Console.WriteLine();
 
 if (!File.Exists(schemaPath))
@@ -112,8 +122,18 @@ if (!File.Exists(schemaPath))
     return Exit(1);
 }
 
+Console.WriteLine();
+
 try
 {
+    if (HasFlag(args, "--fix-pinned"))
+    {
+        var fix = await SchemaFileApplier.FixPinnedColumnsAsync(dbPath, Console.Out);
+        Console.WriteLine();
+        Console.WriteLine(fix.Ok ? "完成: 缺列已补上（或本来就有）。" : "失败: " + fix.Error);
+        return Exit(fix.Ok ? 0 : 2);
+    }
+
     var result = await SchemaFileApplier.ApplyAsync(dbPath, schemaPath, Console.Out);
     Console.WriteLine();
     Console.WriteLine("完成:");

@@ -52,12 +52,39 @@ publish\tools\DbSchemaMigrate.exe
 - API 启动只做：连库、`EnsureCreated`（空库建基础表）、种子数据。
 - **不会**再自动 `ALTER`；缺列时报错时，先跑刷库 exe。
 
-## 线上缺 PendingReview 等列时
+## 线上缺 PendingReview / PinnedUntil 等列时
 
-对现有库执行一次：
+对**站点正在用的那份**库执行一次（路径必须等于 `BS_DATA_DIR\forum.db`）：
 
 ```bat
 scripts\migrate-db.bat 你的\data\forum.db路径
 ```
 
-日志里应出现 `[新增列] Threads.PendingReview`，然后回收应用池即可。
+或：
+
+```bat
+publish\tools\DbSchemaMigrate.exe --db "D:\BS\data\forum.db" --nopause
+```
+
+没有 SQLite 管理工具也没关系：这个 exe 就是加列工具。若只缺置顶/沉默相关列，可只跑：
+
+```bat
+publish\tools\DbSchemaMigrate.exe --db "D:\BS\data\forum.db" --fix-pinned --nopause
+```
+
+成功日志应出现例如：
+
+```text
+[新增列] Threads.PinnedUntil
+```
+
+或 `--fix-pinned` 时：
+
+```text
+[新增] Threads.PinnedUntil
+```
+
+若出现「缺少论坛基础表 Users/Threads/Posts」或大量「表不存在，跳过列」：
+说明刷到的是**空库/错文件**，不是业务库。请核对 exe 打印的「库绝对路径 / 库文件大小 / 库内已有表」。
+
+然后回收应用池即可。
